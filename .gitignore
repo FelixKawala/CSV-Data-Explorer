@@ -1,0 +1,29 @@
+# This repository holds the tool, never the data it visualises.
+# Datasets are loaded at runtime through the import UI.
+
+# --- data (yours or anyone else's) ---
+*.csv
+evaluation/
+check/
+target/
+task.txt
+dataset.json
+
+# --- personal scripts + scratch that depend on a specific dataset ---
+local/
+
+# --- build output and dependencies ---
+dist/
+node_modules/
+
+# --- editor / OS noise ---
+.DS_Store
+*.swp
+
+# The generated fixture CSV is the one exception: it is synthetic, committed
+# on purpose, and is what lets the test suite run without any real data.
+!test/fixtures/*.csv
+
+# personal Claude Code settings
+.claude/settings.local.json
+.claude/worktrees/
