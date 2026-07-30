@@ -45,15 +45,15 @@ function dataToCsv(data) {
 
 function pgfplotsFor(data, csvFile, caption) {
   const bar = data.chartType === 'bars';
-  const diverging = DIVERGING_KINDS.indexOf(data.kind) !== -1;
-  const ylabel = kindAxisLabel(data.kind);
+  const diverging = isDiverging(data.kind);
+  const ylabel = axisLabelOf(data.kind);
   const out = [];
   if (caption) out.push('% --- ' + caption + ' ---');
   out.push('\\begin{tikzpicture}');
   out.push('  \\begin{axis}[');
   out.push('    width=\\linewidth, height=5cm,');
   if (bar) out.push('    ybar' + (data.seriesLabels.length > 1 ? '=0pt, bar width=' + Math.max(1, Math.round(60 / Math.max(data.rows.length, 1))) + 'pt,' : ','));
-  if (data.kind === 'count') out.push('    ymode=log, log basis y=10,');
+  if (useLog(data.kind)) out.push('    ymode=log, log basis y=10,');
   out.push('    ylabel={' + latexEscape(ylabel) + '},');
   out.push('    xtick=data,');
   out.push('    xticklabels from table={\\vizdata}{label},');

@@ -146,17 +146,23 @@ console.log('\n=== 5. Facets still work when you opt in ===');
   window.close();
 }
 
-console.log('\n=== 6. Too-many-series guard ===');
+console.log('\n=== 6. Many series: colours are generated, not refused ===');
 {
   const { window, doc } = boot();
-  setZone(window, doc, 'app', 'series'); // variant(3) x app(5) = 15 > 8
+  setZone(window, doc, 'app', 'series'); // variant(3) x app(5) = 15 series
+  ok(!doc.querySelector('#plots .plot-empty'), 'the chart is drawn rather than refused');
+  const bars = doc.querySelectorAll('#plots rect.bar').length;
+  ok(bars > 100, 'bars render for every series', bars);
+  const fills = Array.from(new Set(Array.from(doc.querySelectorAll('#plots rect.bar')).map(r => r.getAttribute('fill'))));
+  // 3 variants x 5 cases = 15, less the 4 the sparse variant has no data for
+  ok(fills.length === 11, 'a distinct colour per drawn series, none reused', fills.length);
+  ok(fills.filter(f => /^hsl\(/.test(f)).length === 3, 'the first eight come from the validated palette, the rest are generated',
+     fills.filter(f => /^hsl\(/.test(f)).length + ' generated');
   const warn = doc.querySelector('#plots .dim-warning');
-  ok(!!warn && /distinct colours/.test(warn.textContent), 'zone UI warns about the colour budget', warn && warn.textContent.slice(0, 70));
-  const empty = doc.querySelector('#plots .plot-empty');
-  ok(!!empty && /series colours/.test(empty.textContent), 'chart explains instead of cycling colours');
-  ok(doc.querySelectorAll('#plots rect.bar').length === 0, 'no bars drawn in the blocked state');
+  ok(!!warn && /stop being reliably distinguishable/.test(warn.textContent),
+     'but the zone UI says the colours stop being distinguishable', warn && warn.textContent.slice(0, 60));
   setZone(window, doc, 'app', 'x');
-  ok(doc.querySelectorAll('#plots rect.bar').length > 100, 'recovers when App goes back to X-axis');
+  ok(!doc.querySelector('#plots .dim-warning'), 'the note clears when the series count drops');
   window.close();
 }
 
@@ -248,6 +254,22 @@ console.log('\n=== 11. Simple mode regression ===');
 }
 
 test9().then(() => {
-  console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
+  console.log('\n=== 12. A runaway cartesian product is refused, not hung ===');
+{
+  const { window, doc } = boot();
+  // fake a high-cardinality dimension the way a mis-marked free-text CSV column would
+  const win = window;
+  win.eval('DIM_BY_KEY.app.values = Array.from({length: 4000}, (_, i) => "v" + i);'
+    + 'plots[0].included.app = DIM_BY_KEY.app.values.slice();'
+    + 'plots[0].zones = { x: ["app", "size"], series: ["variant"], facet: ["dataset", "device"] };'
+    + 'renderPlots();');
+  const msg = doc.querySelector('#plots .plot-empty');
+  ok(!!msg && /would draw/.test(msg.textContent), 'it refuses with a count', msg && msg.textContent.slice(0, 70));
+  ok(/Application alone has 4000 values/.test(msg.textContent), 'and names the offending dimension');
+  ok(doc.querySelectorAll('#plots rect.bar').length === 0, 'nothing is drawn');
+  window.close();
+}
+
+console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
   process.exit(failures === 0 ? 0 : 1);
 });

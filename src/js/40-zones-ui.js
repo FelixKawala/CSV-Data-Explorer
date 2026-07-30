@@ -182,10 +182,11 @@ function renderZonesUI(container, plot, onChange) {
       '), so Metric is shown as stacked Panels — one sub-chart per metric. Remove the odd one out to group it as ' +
       zoneTitle[plot.metricZone] + ' again.';
   }
-  if (plan.seriesCount > CAT_PALETTE.length && plot.chartType !== 'table') {
+  if (plan.seriesCount > PALETTE_COMFORTABLE && plot.chartType !== 'table') {
     html('div', 'dim-warning', container).textContent =
-      'Series would need ' + plan.seriesCount + ' distinct colours (max ' + CAT_PALETTE.length +
-      ') — move a dimension out of ' + zoneTitle.series + ', or narrow its included values.';
+      'Series needs ' + plan.seriesCount + ' colours. Past about ' + PALETTE_COMFORTABLE +
+      ' they stop being reliably distinguishable — consider moving a dimension out of '
+      + zoneTitle.series + ', or narrowing its included values.';
   }
 }
 

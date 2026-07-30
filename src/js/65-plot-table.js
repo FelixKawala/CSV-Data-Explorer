@@ -22,7 +22,7 @@ function renderPlotTable(plot, wrap) {
   let out = '<table class="data-table"><thead><tr>' + DIM_KEYS.map(k => `<th>${DIM_BY_KEY[k].label}</th>`).join('') + '<th>Value</th></tr></thead><tbody>';
   shown.forEach(r => {
     const val = metricValueAt(r);
-    out += '<tr>' + DIM_KEYS.map(k => `<td>${dimValueLabel(k, r[k])}</td>`).join('') + `<td>${formatByKind(METRIC_BY_KEY[r.metric].kind, val)}</td></tr>`;
+    out += '<tr>' + DIM_KEYS.map(k => `<td>${dimValueLabel(k, r[k])}</td>`).join('') + `<td>${formatValue(METRIC_BY_KEY[r[MEASURE_DIM]].format, val)}</td></tr>`;
   });
   out += '</tbody></table>';
   if (truncated) out += `<div class="plot-empty">Showing first ${MAX_ROWS} of ${rows.length} rows.</div>`;

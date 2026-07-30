@@ -4,15 +4,18 @@
 // a pure filter; with 2+ it joins the grouping as a chip in plot.metricZone.
 function computeAxisPlan(plot) {
   const metricActive = plot.included.metric.length > 1;
-  const kinds = [];
-  plot.included.metric.forEach(mk => {
-    const k = METRIC_BY_KEY[mk].kind;
-    if (kinds.indexOf(k) === -1) kinds.push(k);
+  // Two measures may share a y-axis only when their formats agree on one. Comparing
+  // formats by identity was wrong: two unrelated `number` measures (nanoseconds and
+  // bytes) would have been merged onto one scale.
+  const groups = [];
+  plot.included[MEASURE_DIM].forEach(mk => {
+    const g = METRIC_BY_KEY[mk].format.axisGroup;
+    if (groups.indexOf(g) === -1) groups.push(g);
   });
-  // Metrics on different scales (a % next to a raw count) can never share an axis, so
-  // rather than refusing to draw, fall back to stacked panels and say so.
-  // a table prints text, so unlike a chart it can hold metrics of different scales
-  const mixedKinds = metricActive && kinds.length > 1 && plot.chartType !== 'table';
+  // Measures on different scales can never share an axis, so rather than refusing to
+  // draw, fall back to stacked panels and say so. A table prints text, so unlike a
+  // chart it can hold measures of different scales.
+  const mixedKinds = metricActive && groups.length > 1 && plot.chartType !== 'table';
   // Two views of the same thing: `zoneDims` drives the UI and shows the Metric chip
   // wherever the user actually put it (so it stays draggable); `axisDims` drives the
   // chart and pulls Metric out of the axes when it is being drawn as panels.
@@ -29,7 +32,7 @@ function computeAxisPlan(plot) {
     zoneDims[mz].splice(at, 0, 'metric');
     // a second y-axis is only meaningful for a cartesian chart whose series carry
     // the differing metrics, and only for exactly two scales
-    dualAxis = !!plot.dualAxis && mixedKinds && kinds.length === 2
+    dualAxis = !!plot.dualAxis && mixedKinds && groups.length === 2
       && mz === 'series' && isCartesian(plot.chartType);
     forcedPanels = mixedKinds && mz !== PANEL_ZONE.key && !dualAxis;
     if (mz === PANEL_ZONE.key || forcedPanels) {
@@ -52,8 +55,8 @@ function computeAxisPlan(plot) {
     mixedKinds: mixedKinds,
     forcedPanels: forcedPanels,
     dualAxis: dualAxis,
-    dualEligible: mixedKinds && kinds.length === 2 && isCartesian(plot.chartType),
-    metricKinds: kinds,
+    dualEligible: mixedKinds && groups.length === 2 && isCartesian(plot.chartType),
+    metricKinds: groups,
   };
 }
 
@@ -76,22 +79,35 @@ function comboEntries(plot, dims) {
   return out;
 }
 
+// Yields the format the leaf should draw with, plus the dimension (if any) the
+// measures in play do not vary along, so a comparison is not repeated once per
+// value of the thing it already compares.
 function effectiveKind(plot, fixed) {
-  const metricsInPlay = (fixed.metric !== undefined) ? [fixed.metric] : plot.included.metric;
-  const kinds = [];
-  metricsInPlay.forEach(mk => { const k = METRIC_BY_KEY[mk].kind; if (kinds.indexOf(k) === -1) kinds.push(k); });
-  return kinds.length === 1 ? { kind: kinds[0], mixed: false } : { kind: null, mixed: true, kinds: kinds };
+  const inPlay = (fixed[MEASURE_DIM] !== undefined) ? [fixed[MEASURE_DIM]] : plot.included[MEASURE_DIM];
+  const formats = [];
+  const groups = [];
+  const ignored = [];
+  inPlay.forEach(mk => {
+    const m = METRIC_BY_KEY[mk];
+    if (!m) return;
+    if (groups.indexOf(m.format.axisGroup) === -1) { groups.push(m.format.axisGroup); formats.push(m.format); }
+    const over = m.derived ? m.derived.over : null;
+    if (over && ignored.indexOf(over) === -1) ignored.push(over);
+  });
+  const ignoredDim = (ignored.length === 1 && inPlay.every(mk => measureIgnoresDim(METRIC_BY_KEY[mk], ignored[0])))
+    ? ignored[0] : null;
+  if (groups.length === 1) return { kind: formats[0], mixed: false, ignoredDim };
+  return { kind: null, mixed: true, kinds: groups, ignoredDim: null };
 }
 
 // A delta panel drops the Variant dimension (the comparison is already in the metric),
 // so panels would otherwise be laid out at different widths and not line up under the
 // shared x-axis. Give every panel the widest panel's slot count.
 function seriesSlotsFor(plot, axes, metricKey) {
-  const kind = METRIC_BY_KEY[metricKey] ? METRIC_BY_KEY[metricKey].kind : null;
-  const drops = DIVERGING_KINDS.indexOf(kind) !== -1;
+  const m = METRIC_BY_KEY[metricKey];
   let n = 1;
   axes.seriesDims.forEach(k => {
-    if (drops && k === 'variant') return;
+    if (measureIgnoresDim(m, k)) return;
     n *= Math.max(plot.included[k].length, 1);
   });
   return n;
@@ -140,12 +156,32 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     return;
   }
 
-  // A Δ metric already contains the variant comparison (Tuned vs Base), so grouping by
-  // Variant on top of it would just repeat the same bar once per variant. Collapse it.
-  const dropVariant = DIVERGING_KINDS.indexOf(kindInfo.kind) !== -1
-    && (seriesDims.indexOf('variant') !== -1 || xDims.indexOf('variant') !== -1);
-  const sDims = dropVariant ? seriesDims.filter(k => k !== 'variant') : seriesDims;
-  const xD = dropVariant ? xDims.filter(k => k !== 'variant') : xDims;
+  // A comparison measure already contains the comparison, so grouping by the very
+  // dimension it compares over would repeat the same bar once per value of it.
+  const dropDim = (kindInfo.ignoredDim
+    && (seriesDims.indexOf(kindInfo.ignoredDim) !== -1 || xDims.indexOf(kindInfo.ignoredDim) !== -1))
+    ? kindInfo.ignoredDim : null;
+  const sDims = dropDim ? seriesDims.filter(k => k !== dropDim) : seriesDims;
+  const xD = dropDim ? xDims.filter(k => k !== dropDim) : xDims;
+
+  // comboEntries is a cartesian product. With a hardcoded schema its size was
+  // known; with an imported CSV a free-text column marked as a dimension would
+  // hang the render, so refuse loudly and name the culprit instead.
+  const CELL_LIMIT = 20000;
+  let cells = 1;
+  let widest = null;
+  sDims.concat(xD).forEach(k => {
+    const n = Math.max(plot.included[k].length, 1);
+    cells *= n;
+    if (!widest || n > Math.max(plot.included[widest].length, 1)) widest = k;
+  });
+  if (cells > CELL_LIMIT) {
+    html('div', 'plot-empty', container).textContent =
+      'That would draw ' + cells.toLocaleString() + ' cells. '
+      + (widest ? DIM_BY_KEY[widest].label + ' alone has ' + plot.included[widest].length + ' values — ' : '')
+      + 'move a dimension into Facets or narrow its included values.';
+    return;
+  }
 
   const seriesAll = comboEntries(plot, sDims);
   const xAll = comboEntries(plot, xD);
@@ -154,14 +190,8 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
   seriesAll.forEach((e, i) => {
     e.color = (sDims.length === 1)
       ? dimValueColor(sDims[0], e.vals[sDims[0]])
-      : CAT_PALETTE[i % CAT_PALETTE.length];
+      : seriesColor(i);
   });
-  if (!isTable && seriesAll.length > CAT_PALETTE.length) {
-    html('div', 'plot-empty', container).textContent =
-      'This chart would need ' + seriesAll.length + ' distinct series colours (max ' + CAT_PALETTE.length +
-      ') - move a dimension out of Series, or narrow its included values.';
-    return;
-  }
 
   function getValue(sEntry, xEntry) {
     const ctx = Object.assign({}, fixed, sEntry.vals, xEntry.vals);
@@ -214,9 +244,9 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
   else if (dual) renderDualAxisLeaf(container, spec, plot.chartType === 'lines');
   else if (plot.chartType === 'lines') renderLineLeaf(container, spec);
   else renderBarLeaf(container, spec);
-  if (dropVariant) {
+  if (dropDim) {
     html('div', 'chart-note', container).textContent =
-      'Variant is not a grouping here — a Δ metric already compares the two variants named in it.';
+      DIM_BY_KEY[dropDim].label + ' is not a grouping here — this measure already compares across it.';
   }
 }
 

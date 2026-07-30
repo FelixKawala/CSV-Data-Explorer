@@ -91,7 +91,7 @@ console.log('\n=== 3. The duplicated delta values ===');
   const shown = all[1].filter(t => /%$/.test(t)).length;
   ok(shown > 0, 'hit-rate values are all still printed', shown);
   const note = Array.from(d.querySelectorAll('#plots .chart-note')).map(n => n.textContent).join(' ');
-  ok(/repeats because the metric does not vary/.test(note), 'the table explains the marker');
+  ok(/repeats because the measure does not vary/.test(note), 'the table explains the marker');
   w.close();
 }
 

@@ -5,7 +5,7 @@ function renderBarLeaf(container, spec) {
   const getValue = spec.getValue, kind = spec.kind;
   const showX = spec.showXLabels !== false && xDims.length > 0;
   // one delta series has nothing to tell apart, so colour carries polarity instead
-  const signColoured = DIVERGING_KINDS.indexOf(kind) !== -1 && sVals.length === 1;
+  const signColoured = isDiverging(kind) && sVals.length === 1;
   const slots = Math.max(spec.slots || sVals.length, sVals.length);
   const lay = xLayout(xVals, xDims, slots);
   const inset = (lay.groupW - (sVals.length * lay.unitW + (sVals.length - 1) * lay.gap)) / 2;
@@ -36,7 +36,7 @@ function renderBarLeaf(container, spec) {
         width: lay.unitW, height: barH, rx: Math.min(3, lay.unitW / 2)
       }, plotG);
       rect.addEventListener('mousemove', e => showTip(e, [
-        xv.label + (sVals.length > 1 ? ' — ' + sv.label : ''), formatByKind(kind, val)
+        xv.label + (sVals.length > 1 ? ' — ' + sv.label : ''), formatValue(kind, val)
       ]));
       rect.addEventListener('mouseleave', hideTip);
     });
@@ -112,7 +112,7 @@ function drawSeriesLines(plotG, sVals, xVals, lay, sc, getValue, kind, dashed, b
       run.push([px, py]);
       const dot = el('circle', { class: 'series-dot', cx: px, cy: py, r: 3.5, fill: sv.color }, plotG);
       dot.addEventListener('mousemove', e => showTip(e, [
-        xv.label + (sVals.length > 1 ? ' — ' + sv.label : ''), formatByKind(kind, val)
+        xv.label + (sVals.length > 1 ? ' — ' + sv.label : ''), formatValue(kind, val)
       ]));
       dot.addEventListener('mouseleave', hideTip);
     });
@@ -129,7 +129,7 @@ function renderDualAxisLeaf(container, spec, asLines) {
   const sVals = spec.series, xVals = spec.x, xDims = spec.xDims, getValue = spec.getValue;
   const kindOf = sv => {
     const mk = sv.vals.metric;
-    return (mk && METRIC_BY_KEY[mk]) ? METRIC_BY_KEY[mk].kind : spec.kind;
+    return (mk && METRIC_BY_KEY[mk]) ? METRIC_BY_KEY[mk].format : spec.kind;
   };
   const kinds = [];
   sVals.forEach(sv => { const k = kindOf(sv); if (kinds.indexOf(k) === -1) kinds.push(k); });
@@ -181,7 +181,7 @@ function renderDualAxisLeaf(container, spec, asLines) {
           width: lay.unitW, height: Math.max(Math.abs(barY - scL.zeroY), 1), rx: Math.min(3, lay.unitW / 2)
         }, plotG);
         rect.addEventListener('mousemove', e => showTip(e, [
-          xv.label + ' — ' + sv.label, formatByKind(primaryKind, val)
+          xv.label + ' — ' + sv.label, formatValue(primaryKind, val)
         ]));
         rect.addEventListener('mouseleave', hideTip);
       });
@@ -204,8 +204,8 @@ function renderDualAxisLeaf(container, spec, asLines) {
         html('span', null, item).textContent = sv.label;
       });
     };
-    cluster('Left axis · ' + kindAxisLabel(primaryKind), primary, false);
-    cluster('Right axis · ' + kindAxisLabel(secondaryKind) + ' (dashed)', secondary, true);
+    cluster('Left axis · ' + axisLabelOf(primaryKind), primary, false);
+    cluster('Right axis · ' + axisLabelOf(secondaryKind) + ' (dashed)', secondary, true);
     html('div', 'legend-note', legend).textContent =
       'Two scales in one frame — heights are not comparable across axes, and where the series cross means nothing.';
   }
@@ -213,7 +213,7 @@ function renderDualAxisLeaf(container, spec, asLines) {
 
 function renderBarLeafDiverging(container, spec) {
   const sVals = spec.series, xVals = spec.x, getValue = spec.getValue;
-  const unit = deltaUnit(spec.kind);
+  const unit = spec.kind ? spec.kind.unit : '';
   const xDims = spec.xDims || [];
   const rowH = Math.max(22, sVals.length * 11 + 8);
   const plotW = 420;
@@ -296,7 +296,7 @@ function renderBarLeafDiverging(container, spec) {
       }, plotG);
       rect.addEventListener('mousemove', e => showTip(e, [
         xv.label + (sVals.length > 1 ? ' — ' + sv.label : ''),
-        formatByKind(spec.kind, val)
+        formatValue(spec.kind, val)
       ]));
       rect.addEventListener('mouseleave', hideTip);
     });
@@ -401,7 +401,7 @@ function renderTableLeaf(container, spec) {
       const td = html('td', 'num', tr);
       const val = spec.getValue(r, c);
       const mk = spec.metricKeyAt ? spec.metricKeyAt(r, c) : null;
-      const kind = (mk && METRIC_BY_KEY[mk]) ? METRIC_BY_KEY[mk].kind : spec.kind;
+      const kind = (mk && METRIC_BY_KEY[mk]) ? METRIC_BY_KEY[mk].format : spec.kind;
       if (val === null || val === undefined) {
         td.textContent = '—';
         td.classList.add('empty');
@@ -412,12 +412,13 @@ function renderTableLeaf(container, spec) {
       if (repeated(mk, r, c)) {
         td.textContent = '″';
         td.classList.add('repeat');
-        td.title = formatByKind(kind, val) + ' — same as the first column of this group; '
-          + METRIC_BY_KEY[mk].label + ' does not vary by Variant.';
+        td.title = formatValue(kind, val) + ' — same as the first column of this group; '
+          + METRIC_BY_KEY[mk].label + ' does not vary by '
+          + DIM_BY_KEY[METRIC_BY_KEY[mk].derived.over].label + '.';
         return;
       }
-      td.textContent = formatByKind(kind, val);
-      if (kind === 'delta' || kind === 'reldelta') td.classList.add(val >= 0 ? 'pos' : 'neg');
+      td.textContent = formatValue(kind, val);
+      if (isDiverging(kind)) td.classList.add(val >= 0 ? 'pos' : 'neg');
     });
   });
 
@@ -436,8 +437,8 @@ function renderTableLeaf(container, spec) {
 
   if (spec.collapseRepeats && table.querySelector('td.repeat')) {
     html('div', 'chart-note', container).textContent =
-      '″ marks a value that repeats because the metric does not vary along that dimension '
-      + '(a Δ metric already compares the variants). Hover to see the number, or switch the collapse off in the plot header.';
+      '″ marks a value that repeats because the measure does not vary along that dimension '
+      + '(it already compares across it). Hover to see the number, or switch the collapse off in the plot header.';
   }
 
   const note = html('div', 'chart-note', container);
@@ -492,13 +493,13 @@ function renderMatrixLeaf(container, spec) {
       const val = getValue(rv, cv);
       let fill, text, dark;
       if (val === null || val === undefined) { fill = 'var(--grid)'; text = '—'; dark = false; }
-      else if (DIVERGING_KINDS.indexOf(kind) !== -1) {
-        fill = divColorGeneric(val / maxAbs); text = (val >= 0 ? '+' : '') + val.toFixed(kind === 'reldelta' ? 0 : 1); dark = Math.abs(val) / maxAbs > 0.5;
-      } else if (kind === 'count') {
+      else if (isDiverging(kind)) {
+        fill = divColorGeneric(val / maxAbs); text = (val >= 0 ? '+' : '') + val.toFixed(kind && kind.key === 'reldelta' ? 0 : 1); dark = Math.abs(val) / maxAbs > 0.5;
+      } else if (useLog(kind)) {
         const t = Math.log10(val + 1) / Math.log10(maxVal + 1);
         fill = seqColorGeneric(t); text = fmtAccess(val); dark = t > 0.55;
       } else {
-        fill = seqColorGeneric(val / 100); text = val.toFixed(0) + '%'; dark = val / 100 > 0.45;
+        fill = seqColorGeneric(val / seqDomain(kind, maxVal)); text = val.toFixed(0) + '%'; dark = val / seqDomain(kind, maxVal) > 0.45;
       }
       const rect = el('rect', { class: 'cell', x: cx, y: ry, width: cellW, height: cellH, fill: fill, rx: 3 }, plotG);
       const label = el('text', {
@@ -507,7 +508,7 @@ function renderMatrixLeaf(container, spec) {
       label.textContent = text;
       rect.addEventListener('mousemove', e => showTip(e, [
         cv.label + ' — ' + rv.label,
-        formatByKind(kind, val)
+        formatValue(kind, val)
       ]));
       rect.addEventListener('mouseleave', hideTip);
     });
@@ -522,25 +523,25 @@ function renderMatrixLeaf(container, spec) {
 function matrixScaleLegend(container, kind, maxVal, maxAbs) {
   const legend = html('div', 'legend scale-legend', container);
   const item = html('div', 'item', legend);
-  const diverging = DIVERGING_KINDS.indexOf(kind) !== -1;
+  const diverging = isDiverging(kind);
   const label = t => { const e = html('span', 'scale-end', item); e.textContent = t; };
 
   if (diverging) {
-    label(formatByKind(kind, -maxAbs));
+    label(formatValue(kind, -maxAbs));
     ['--div-neg-3', '--div-neg-2', '--div-neg-1', '--div-mid', '--div-pos-1', '--div-pos-2', '--div-pos-3']
       .forEach(v => { html('span', 'scale-step', item).style.background = 'var(' + v + ')'; });
-    label(formatByKind(kind, maxAbs));
+    label(formatValue(kind, maxAbs));
     const mid = html('span', 'scale-note', item);
     mid.textContent = 'grey = no change';
   } else {
-    const lo = kind === 'count' ? 0 : 0;
-    const hi = kind === 'count' ? maxVal : 100;
-    label(formatByKind(kind, lo));
+    const lo = 0;
+    const hi = seqDomain(kind, maxVal);
+    label(formatValue(kind, lo));
     for (let i = 0; i <= 6; i++) {
       html('span', 'scale-step', item).style.background = seqColorGeneric(i / 6);
     }
-    label(formatByKind(kind, hi));
-    if (kind === 'count') {
+    label(formatValue(kind, hi));
+    if (useLog(kind)) {
       const note = html('span', 'scale-note', item);
       note.textContent = 'log scale';
     }
