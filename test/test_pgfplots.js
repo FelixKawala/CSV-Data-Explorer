@@ -166,7 +166,9 @@ console.log('\n=== 8. A table exports its data too ===');
 {
   const { w, d } = boot();
   setType(w, d, 'table');
-  ok(d.querySelectorAll('#plots .leaf-tools button').length === 1, 'a table gets its own export button');
+  ok(Array.from(d.querySelectorAll('#plots .leaf-tools button')).map(b => b.textContent).join(' ')
+     === 'TikZ + CSV SVG PNG', 'a table gets its own export row',
+     Array.from(d.querySelectorAll('#plots .leaf-tools button')).map(b => b.textContent).join(' '));
   d.querySelector('#plots .leaf-tools button').click();
   const parts = exportParts(d);
   const names = Object.keys(parts);

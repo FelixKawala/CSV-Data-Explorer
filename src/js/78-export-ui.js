@@ -111,5 +111,6 @@ function addTikzButton(host, getRoot, label, name, cls) {
     setStatus('Export ready — ' + base + '.tex', false);
   });
   host.appendChild(btn);
+  addImageButtons(host, getRoot, name, cls);
   return btn;
 }

@@ -78,8 +78,9 @@ function texProblems(tex) {
   console.log('\n=== 1. Export at chart level ===');
   {
     const { w, d } = boot();
-    const btns = d.querySelectorAll('#plots .leaf-tools button');
-    ok(btns.length === 1, 'each chart carries its own TikZ button', btns.length);
+    const btns = Array.from(d.querySelectorAll('#plots .leaf-tools button'));
+    ok(btns.map(b => b.textContent).join(' ') === 'TikZ SVG PNG',
+       'each chart carries its own export row', btns.map(b => b.textContent).join(' '));
     const f = await grab(w, () => btns[0].click());
     ok(!!f, 'clicking it produces a file');
     ok(/\.tex$/.test(f.name), 'named as a .tex', f.name);
@@ -107,8 +108,9 @@ function texProblems(tex) {
   {
     const { w, d } = boot();
     setZone(w, d, 'device', 'facet');
-    const facetBtns = d.querySelectorAll('#plots .facet-card > h5 button');
-    ok(facetBtns.length === 3, 'a button per facet card', facetBtns.length);
+    const facetBtns = Array.from(d.querySelectorAll('#plots .facet-card > h5 button'))
+      .filter(b => b.textContent === 'TikZ');
+    ok(facetBtns.length === 3, 'a TikZ button per facet card', facetBtns.length);
     const one = await grab(w, () => facetBtns[0].click());
     ok((one.text.match(/\\begin\{tikzpicture\}/g) || []).length === 1, 'a facet exports just its own charts');
     ok(/Device: dev1/.test(one.text), 'and captions it', (/% --- (.*) ---/.exec(one.text) || [])[1]);
@@ -126,8 +128,9 @@ function texProblems(tex) {
   {
     const { w, d } = boot();
     add(d, 'Count A');
-    const panelBtns = d.querySelectorAll('#plots .metric-panel .panel-title button');
-    ok(panelBtns.length === 2, 'a button per stacked panel', panelBtns.length);
+    const panelBtns = Array.from(d.querySelectorAll('#plots .metric-panel .panel-title button'))
+      .filter(b => b.textContent === 'TikZ');
+    ok(panelBtns.length === 2, 'a TikZ button per stacked panel', panelBtns.length);
     const p = await grab(w, () => panelBtns[1].click());
     ok((p.text.match(/\\begin\{tikzpicture\}/g) || []).length === 1, 'exports that panel alone');
     ok(/Count A/.test(p.text), 'captioned with the metric');
