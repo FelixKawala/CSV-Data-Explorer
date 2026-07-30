@@ -21,24 +21,24 @@ const names = col => Array.from(col.querySelectorAll('.dnd-chip')).map(c => c.te
 console.log('\n=== Clicking anywhere on a chip toggles it ===');
 {
   const { w, d } = boot();
-  ok(names(cols(d, 'GPU')[0]).join(',') === '2080,4070,5090', 'three GPUs shown');
+  ok(names(cols(d, 'Device')[0]).join(',') === 'dev1,dev2,dev3', 'three Devices shown');
 
   // click the chip body (the label), not the little icon
-  const chip = cols(d, 'GPU')[0].querySelectorAll('.dnd-chip')[0];
+  const chip = cols(d, 'Device')[0].querySelectorAll('.dnd-chip')[0];
   ok(chip.getAttribute('role') === 'button', 'the chip is exposed as a button');
   ok(chip.tabIndex === 0, 'and is keyboard focusable');
   ok(/^Click to remove/.test(chip.getAttribute('title')), 'with a title saying what a click does', chip.getAttribute('title'));
   chip.querySelector('span:nth-of-type(2)').click();   // the text label
-  ok(names(cols(d, 'GPU')[0]).join(',') === '4070,5090', 'clicking the label removed it', names(cols(d, 'GPU')[0]).join(','));
+  ok(names(cols(d, 'Device')[0]).join(',') === 'dev2,dev3', 'clicking the label removed it', names(cols(d, 'Device')[0]).join(','));
 
   // and clicking it in Available adds it back
-  const back = Array.from(cols(d, 'GPU')[1].querySelectorAll('.dnd-chip')).find(c => /2080/.test(c.textContent));
+  const back = Array.from(cols(d, 'Device')[1].querySelectorAll('.dnd-chip')).find(c => /dev1/.test(c.textContent));
   back.click();
-  ok(names(cols(d, 'GPU')[0]).indexOf('2080') !== -1, 'clicking it in Available adds it back', names(cols(d, 'GPU')[0]).join(','));
+  ok(names(cols(d, 'Device')[0]).indexOf('dev1') !== -1, 'clicking it in Available adds it back', names(cols(d, 'Device')[0]).join(','));
 
   // the little icon still works (it just bubbles now)
-  cols(d, 'GPU')[0].querySelectorAll('.dnd-chip')[0].querySelector('button').click();
-  ok(names(cols(d, 'GPU')[0]).length === 2, 'the +/x icon still works', names(cols(d, 'GPU')[0]).join(','));
+  cols(d, 'Device')[0].querySelectorAll('.dnd-chip')[0].querySelector('button').click();
+  ok(names(cols(d, 'Device')[0]).length === 2, 'the +/x icon still works', names(cols(d, 'Device')[0]).join(','));
   ok(!d.querySelector('#plots .dim-block .dnd-chip button[tabindex="0"]'), 'the icon is not separately focusable');
   w.close();
 }
@@ -61,14 +61,14 @@ console.log('\n=== A drag must not also count as a click ===');
   const { w, d } = boot();
   const dt = { data: {}, setData() {}, getData() { return ''; } };
   const fire = (el, t) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.dataTransfer = dt; el.dispatchEvent(e); };
-  const before = names(cols(d, 'GPU')[0]).join(',');
-  const chip = cols(d, 'GPU')[0].querySelectorAll('.dnd-chip')[0];
+  const before = names(cols(d, 'Device')[0]).join(',');
+  const chip = cols(d, 'Device')[0].querySelectorAll('.dnd-chip')[0];
   fire(chip, 'dragstart');
   fire(chip, 'dragend');
   chip.click();  // browsers may emit a trailing click after a drag
-  ok(names(cols(d, 'GPU')[0]).join(',') === before, 'the trailing click after a drag is swallowed', before + ' -> ' + names(cols(d, 'GPU')[0]).join(','));
+  ok(names(cols(d, 'Device')[0]).join(',') === before, 'the trailing click after a drag is swallowed', before + ' -> ' + names(cols(d, 'Device')[0]).join(','));
   chip.click();  // a genuine click afterwards still works
-  ok(names(cols(d, 'GPU')[0]).join(',') !== before, 'but the next real click works', names(cols(d, 'GPU')[0]).join(','));
+  ok(names(cols(d, 'Device')[0]).join(',') !== before, 'but the next real click works', names(cols(d, 'Device')[0]).join(','));
   w.close();
 }
 
@@ -76,7 +76,7 @@ console.log('\n=== Metric chips in "Data shown" behave the same ===');
 {
   const { w, d } = boot();
   const avail = d.querySelectorAll('#plots .data-shown-block .dual-col')[1];
-  const l2 = Array.from(avail.querySelectorAll('.dnd-chip')).find(c => /L2 hit rate/.test(c.textContent));
+  const l2 = Array.from(avail.querySelectorAll('.dnd-chip')).find(c => /Rate B/.test(c.textContent));
   l2.click();
   const shown = Array.from(d.querySelectorAll('#plots .data-shown-block .dual-col')[0].querySelectorAll('.dnd-chip')).map(c => c.textContent);
   ok(shown.length === 2, 'clicking a metric card selects it', shown.join(' | '));

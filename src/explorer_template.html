@@ -1,4 +1,4 @@
-<title>Cache data explorer</title>
+<title>Data explorer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   .viz-root {
@@ -13,8 +13,8 @@
     --border:         rgba(11,11,11,0.10);
 
     --series-base:    #2a78d6; /* blue    slot 1 */
-    --series-kbk:     #eb6834; /* orange  slot 2 */
-    --series-kbki:    #1baf7a; /* aqua    slot 3 */
+    --series-tuned:     #eb6834; /* orange  slot 2 */
+    --series-tuned-alt:    #1baf7a; /* aqua    slot 3 */
     --app-4:          #eda100; /* yellow  slot 4 */
     --app-5:          #e87ba4; /* magenta slot 5 */
     --cat-6:          #008300; /* green   slot 6 */
@@ -44,8 +44,8 @@
       --axis:           #383835;
       --border:         rgba(255,255,255,0.10);
       --series-base:    #3987e5;
-      --series-kbk:     #d95926;
-      --series-kbki:    #199e70;
+      --series-tuned:     #d95926;
+      --series-tuned-alt:    #199e70;
       --app-4:          #c98500;
       --app-5:          #d55181;
       --cat-6:          #008300;
@@ -70,8 +70,8 @@
     --axis:           #383835;
     --border:         rgba(255,255,255,0.10);
     --series-base:    #3987e5;
-    --series-kbk:     #d95926;
-    --series-kbki:    #199e70;
+    --series-tuned:     #d95926;
+    --series-tuned-alt:    #199e70;
     --app-4:          #c98500;
     --app-5:          #d55181;
     --cat-6:          #008300;
@@ -386,7 +386,7 @@
 </style>
 
 <div class="viz-root">
-  <h1>Cache data explorer</h1>
+  <h1>Data explorer</h1>
 
   <div class="mode-tabs" id="mode-tabs">
     <button class="mode-tab" data-mode="simple" aria-pressed="true">Simple</button>
@@ -398,10 +398,10 @@
     Toggle applications and data categories on or off to build your own view.
     Group by <b>application</b> (one card per app, categories nested inside),
     by <b>category</b> (one card per category, applications nested inside —
-    same metric lined up across applications), or by <b>GPU + config</b>
-    (bars grouped by GPU/thread-count, one bar per application, so every app
+    same metric lined up across applications), or by <b>Device + config</b>
+    (bars grouped by Device/size, one bar per case, so every case
     sits right next to its peers — each bar carries its own app-code tick
-    label below it, in addition to the color and legend). GPU and variant
+    label below it, in addition to the color and legend). Device and variant
     filters scope every panel at once.
   </p>
 
@@ -413,8 +413,8 @@
     <div class="ctrl-row">
       <span class="ctrl-label">Dataset</span>
       <select id="ctl-dataset"></select>
-      <span class="ctrl-label" style="width:auto;">GPU</span>
-      <div class="chip-group" id="ctl-gpu"></div>
+      <span class="ctrl-label" style="width:auto;">Device</span>
+      <div class="chip-group" id="ctl-device"></div>
       <span class="ctrl-label" style="width:auto;">Variant</span>
       <div class="chip-group" id="ctl-variant"></div>
     </div>
@@ -440,7 +440,7 @@
   <div id="table-wrap" class="table-wrap hidden"></div>
 
   <p class="lede" style="margin-top:8px;">
-    TAPAS-i (interleaved) only exists for HarrisCorner (no interleaved-tiled run for other apps) —
+    Tuned-alt (interleaved) only exists for alpha (no interleaved-tiled run for other apps) —
     toggling it off elsewhere has no effect. Access-count panels use a log scale
     (counts span roughly 10<sup>5</sup>–10<sup>7</sup>).
   </p>
@@ -453,9 +453,9 @@
       (series/rows and x/columns), everything above becomes a nested facet
       (dimensions left at a single value stay invisible filters). Each
       dimension also gets its own <b>included values</b> list — drag between
-      "shown" and "available," or click ± — so one plot can show just L1 hit
-      rate while another shows L1 hit rate and access count side by side.
-      Both datasets, all GPUs, and cache-line counts are available as
+      "shown" and "available," or click ± — so one plot can show just rateA hit
+      rate while another shows Rate A and access count side by side.
+      Both datasets, all Devices, and sizes are available as
       independent dimensions here.
     </p>
     <div class="builder-toolbar" id="builder-toolbar"></div>
@@ -472,27 +472,27 @@
   const tooltip = document.getElementById('tooltip');
   const SVGNS = 'http://www.w3.org/2000/svg';
 
-  const VARIANTS = ['base', 'kbk', 'kbki'];
-  const VARIANT_COLOR = { base: 'var(--series-base)', kbk: 'var(--series-kbk)', kbki: 'var(--series-kbki)' };
-  const VARIANT_LABEL = { base: 'KbK', kbk: 'TAPAS', kbki: 'TAPAS (interleaved)' };
-  const VARIANT_LABEL_SHORT = { base: 'KbK', kbk: 'TAPAS', kbki: 'TAPAS-i' };
-  const GPUS = ['2080', '4070', '5090'];
+  const VARIANTS = ['base', 'tuned', 'tunedAlt'];
+  const VARIANT_COLOR = { base: 'var(--series-base)', tuned: 'var(--series-tuned)', tunedAlt: 'var(--series-tuned-alt)' };
+  const VARIANT_LABEL = { base: 'Base', tuned: 'Tuned', tunedAlt: 'Tuned-alt' };
+  const VARIANT_LABEL_SHORT = { base: 'Base', tuned: 'Tuned', tunedAlt: 'Tuned-alt' };
+  const DEVICES = ['dev1', 'dev2', 'dev3'];
 
   // Fixed categorical order (blue, orange, aqua, yellow, magenta) — color is
   // assigned by an app's position in the dataset's canonical app list, never
   // by its position in the current filtered subset, so toggling other apps
   // on/off never repaints the ones still visible.
-  const APP_PALETTE = ['var(--series-base)', 'var(--series-kbk)', 'var(--series-kbki)', 'var(--app-4)', 'var(--app-5)'];
+  const APP_PALETTE = ['var(--series-base)', 'var(--series-tuned)', 'var(--series-tuned-alt)', 'var(--app-4)', 'var(--app-5)'];
   function appColor(ds, app) {
     const idx = ds.apps.indexOf(app);
     return APP_PALETTE[idx % APP_PALETTE.length];
   }
 
   const CATEGORIES = [
-    { key: 'L1',        label: 'L1 hit rate',    field: 'L1',        unit: '%', log: false, fmt: v => v.toFixed(1) + '%' },
-    { key: 'L2',        label: 'L2 hit rate',    field: 'L2',        unit: '%', log: false, fmt: v => v.toFixed(1) + '%' },
-    { key: 'L1_access', label: 'L1 access count', field: 'L1_access', unit: '',  log: true,  fmt: fmtAccess },
-    { key: 'L2_access', label: 'L2 access count', field: 'L2_access', unit: '',  log: true,  fmt: fmtAccess },
+    { key: 'rateA',        label: 'Rate A',    field: 'rateA',        unit: '%', log: false, fmt: v => v.toFixed(1) + '%' },
+    { key: 'rateB',        label: 'Rate B',    field: 'rateB',        unit: '%', log: false, fmt: v => v.toFixed(1) + '%' },
+    { key: 'countA', label: 'Count A', field: 'countA', unit: '',  log: true,  fmt: fmtAccess },
+    { key: 'countB', label: 'Count B', field: 'countB', unit: '',  log: true,  fmt: fmtAccess },
   ];
 
   function fmtAccess(v) {
@@ -531,17 +531,17 @@
 
   // ---------------- state ----------------
   const state = {
-    dataset: '32x32',
+    dataset: 'setA',
     groupBy: 'app', // 'app' | 'category'
-    gpus: new Set(GPUS),
+    gpus: new Set(DEVICES),
     variants: new Set(VARIANTS),
-    categories: new Set(['L1', 'L2']),
+    categories: new Set(['rateA', 'rateB']),
     apps: new Set(),
   };
   const GROUP_BY_OPTIONS = [
     { key: 'app', label: 'Application' },
     { key: 'category', label: 'Category' },
-    { key: 'config', label: 'GPU + config' },
+    { key: 'config', label: 'Device + config' },
   ];
 
   const dsSel = document.getElementById('ctl-dataset');
@@ -600,7 +600,7 @@
   }
 
   function renderGpuChips() {
-    buildChipGroup(document.getElementById('ctl-gpu'), GPUS, state.gpus, g => g, null, render);
+    buildChipGroup(document.getElementById('ctl-device'), DEVICES, state.gpus, g => g, null, render);
   }
   function renderVariantChips() {
     buildChipGroup(document.getElementById('ctl-variant'), VARIANTS, state.variants, v => VARIANT_LABEL_SHORT[v], v => VARIANT_COLOR[v], render);
@@ -645,7 +645,7 @@
     if (series.length === 0 || combos.length === 0) {
       const msg = document.createElement('div');
       msg.style.cssText = 'font-size:12px;color:var(--text-muted);padding:20px 0;';
-      msg.textContent = emptyMsg || 'Nothing to show — enable at least one series and one GPU.';
+      msg.textContent = emptyMsg || 'Nothing to show — enable at least one series and one Device.';
       container.appendChild(msg);
       return;
     }
@@ -655,7 +655,7 @@
     const plotW = combos.length * groupW + Math.max(combos.length - 1, 0) * groupGap;
     // Series ticks (one short per-bar label under every bar, e.g. which
     // application a bar is) need extra vertical room above the group's
-    // own GPU·config label, which gets pushed further down to clear them.
+    // own Device·config label, which gets pushed further down to clear them.
     const seriesTickH = showSeriesTicks ? 24 : 0;
     const marginL = cat.log ? 46 : 38, marginR = 8, marginT = 10, marginB = 48 + seriesTickH;
     const plotH = 170;
@@ -708,13 +708,13 @@
           const barTop = cat.log ? barY : Math.min(barY, plotH);
           const barH = Math.max(plotH - barTop, 1);
           const rect = el('rect', { class: 'bar', fill: s.color, x: bx, y: barTop, width: barW, height: barH, rx: 3 }, plot);
-          rect.addEventListener('mousemove', e => showTip(e, [`${c.gpu} · ${c.threads} thr — ${s.label}`, cat.fmt(val)]));
+          rect.addEventListener('mousemove', e => showTip(e, [`${c.device} · ${c.size} thr — ${s.label}`, cat.fmt(val)]));
           rect.addEventListener('mouseleave', hideTip);
         }
         if (showSeriesTicks) {
           // Per-bar identity label (e.g. which application) so the tick
           // itself says who the bar is, not just the color — color +
-          // legend alone made the GPU+config groups unreadable without
+          // legend alone made the Device+config groups unreadable without
           // constantly cross-checking the legend.
           const bcx = bx + barW / 2;
           const seriesLabel = el('text', {
@@ -722,7 +722,7 @@
             transform: `rotate(-90 ${bcx} ${plotH + 8})`
           }, plot);
           seriesLabel.textContent = s.label.length > 4 ? s.label.slice(0, 3).toUpperCase() : s.label;
-          seriesLabel.addEventListener('mousemove', e => showTip(e, [`${c.gpu} · ${c.threads} thr`, s.label]));
+          seriesLabel.addEventListener('mousemove', e => showTip(e, [`${c.device} · ${c.size} thr`, s.label]));
           seriesLabel.addEventListener('mouseleave', hideTip);
         }
       });
@@ -730,7 +730,7 @@
         class: 'group-label', x: gx + groupW / 2, y: plotH + 14 + seriesTickH, 'text-anchor': 'end',
         transform: `rotate(-40 ${gx + groupW / 2} ${plotH + 14 + seriesTickH})`
       }, plot);
-      label.textContent = `${c.gpu}·${c.threads}`;
+      label.textContent = `${c.device}·${c.size}`;
     });
 
     container.appendChild(svg);
@@ -738,7 +738,7 @@
 
   // ---------------- render ----------------
   function filteredCombos() {
-    return currentDataset().combos.filter(c => state.gpus.has(c.gpu));
+    return currentDataset().combos.filter(c => state.gpus.has(c.device));
   }
 
   function activeVariants() { return VARIANTS.filter(v => state.variants.has(v)); }
@@ -746,8 +746,8 @@
   function variantGetValue(appData, cat) { return (combo, s) => appData[combo.key][cat.field][s.key]; }
   function appSeries(ds, activeApps) { return activeApps.map(app => ({ key: app, color: appColor(ds, app), label: app })); }
   function appGetValue(ds, cat, variantKey) { return (combo, s) => ds.data[s.key][combo.key][cat.field][variantKey]; }
-  const VARIANT_EMPTY_MSG = 'Nothing to show — enable at least one variant and one GPU.';
-  const APP_EMPTY_MSG = 'Nothing to show — enable at least one application and one GPU.';
+  const VARIANT_EMPTY_MSG = 'Nothing to show — enable at least one variant and one Device.';
+  const APP_EMPTY_MSG = 'Nothing to show — enable at least one application and one Device.';
 
   function render() {
     renderLegend();
@@ -763,8 +763,8 @@
       empty.textContent = 'Select at least one application and one category above to see data.';
     } else if (state.groupBy === 'config') {
       // one card per category, one panel per variant inside — bars are
-      // grouped by GPU+config, one bar per application, so every app sits
-      // right next to its peers for the same GPU/config/variant.
+      // grouped by Device+config, one bar per application, so every app sits
+      // right next to its peers for the same Device/config/variant.
       activeCats.forEach(cat => {
         const card = html('div', 'app-card', main);
         const heading = html('h2', null, card);
@@ -828,13 +828,13 @@
     const activeCats = CATEGORIES.filter(c => state.categories.has(c.key));
     const activeVariants = VARIANTS.filter(v => state.variants.has(v));
 
-    let out = '<table class="data-table"><thead><tr><th>App</th><th>GPU · threads</th><th>Category</th>';
+    let out = '<table class="data-table"><thead><tr><th>App</th><th>Device · size</th><th>Category</th>';
     activeVariants.forEach(v => { out += `<th>${VARIANT_LABEL[v]}</th>`; });
     out += '</tr></thead><tbody>';
     activeApps.forEach(app => {
       combos.forEach(c => {
         activeCats.forEach(cat => {
-          out += `<tr><td>${app}</td><td>${c.gpu}·${c.threads}</td><td>${cat.label}</td>`;
+          out += `<tr><td>${app}</td><td>${c.device}·${c.size}</td><td>${cat.label}</td>`;
           activeVariants.forEach(v => {
             const val = ds.data[app][c.key][cat.field][v];
             out += `<td>${val === null || val === undefined ? '—' : cat.fmt(val)}</td>`;
@@ -901,41 +901,41 @@
   }
 
   function kindAxisLabel(kind) {
-    if (kind === 'count') return 'access counts (log)';
-    if (kind === 'pct') return 'hit rate %';
+    if (kind === 'count') return 'counts (log)';
+    if (kind === 'pct') return 'rate %';
     if (kind === 'reldelta') return 'relative change %';
     if (kind === 'delta') return 'change in points';
     return kind;
   }
 
   const METRICS = [
-    { key: 'L1',             label: 'L1 hit rate',         kind: 'pct',   field: 'L1' },
-    { key: 'L2',             label: 'L2 hit rate',         kind: 'pct',   field: 'L2' },
-    { key: 'L1_access',      label: 'L1 access count',     kind: 'count', field: 'L1_access' },
-    { key: 'L2_access',      label: 'L2 access count',     kind: 'count', field: 'L2_access' },
-    { key: 'L1_delta_tapas',  label: 'Δ L1 (TAPAS−KbK)',   kind: 'delta', field: 'L1', pair: ['kbk', 'base'] },
-    { key: 'L2_delta_tapas',  label: 'Δ L2 (TAPAS−KbK)',   kind: 'delta', field: 'L2', pair: ['kbk', 'base'] },
-    { key: 'L1_delta_tapasi', label: 'Δ L1 (TAPAS-i−KbK)', kind: 'delta', field: 'L1', pair: ['kbki', 'base'] },
-    { key: 'L2_delta_tapasi', label: 'Δ L2 (TAPAS-i−KbK)', kind: 'delta', field: 'L2', pair: ['kbki', 'base'] },
+    { key: 'rateA',             label: 'Rate A',         kind: 'pct',   field: 'rateA' },
+    { key: 'rateB',             label: 'Rate B',         kind: 'pct',   field: 'rateB' },
+    { key: 'countA',      label: 'Count A',     kind: 'count', field: 'countA' },
+    { key: 'countB',      label: 'Count B',     kind: 'count', field: 'countB' },
+    { key: 'rateA_dTuned',  label: 'Δ Rate A (Tuned−Base)',   kind: 'delta', field: 'rateA', pair: ['tuned', 'base'] },
+    { key: 'rateB_dTuned',  label: 'Δ Rate B (Tuned−Base)',   kind: 'delta', field: 'rateB', pair: ['tuned', 'base'] },
+    { key: 'rateA_dAlt', label: 'Δ Rate A (Tuned-alt−Base)', kind: 'delta', field: 'rateA', pair: ['tunedAlt', 'base'] },
+    { key: 'rateB_dAlt', label: 'Δ Rate B (Tuned-alt−Base)', kind: 'delta', field: 'rateB', pair: ['tunedAlt', 'base'] },
     // access-count change is expressed relative, not absolute: raw access counts span
     // orders of magnitude across apps, so "-42%" compares where "-3.1M" does not
-    { key: 'L1a_delta_tapas',  label: 'Δ L1 accesses (TAPAS vs KbK)',   kind: 'reldelta', field: 'L1_access', pair: ['kbk', 'base'] },
-    { key: 'L2a_delta_tapas',  label: 'Δ L2 accesses (TAPAS vs KbK)',   kind: 'reldelta', field: 'L2_access', pair: ['kbk', 'base'] },
-    { key: 'L1a_delta_tapasi', label: 'Δ L1 accesses (TAPAS-i vs KbK)', kind: 'reldelta', field: 'L1_access', pair: ['kbki', 'base'] },
-    { key: 'L2a_delta_tapasi', label: 'Δ L2 accesses (TAPAS-i vs KbK)', kind: 'reldelta', field: 'L2_access', pair: ['kbki', 'base'] },
+    { key: 'countA_dTuned',  label: 'Δ Count A (Tuned vs Base)',   kind: 'reldelta', field: 'countA', pair: ['tuned', 'base'] },
+    { key: 'countB_dTuned',  label: 'Δ Count B (Tuned vs Base)',   kind: 'reldelta', field: 'countB', pair: ['tuned', 'base'] },
+    { key: 'countA_dAlt', label: 'Δ Count A (Tuned-alt vs Base)', kind: 'reldelta', field: 'countA', pair: ['tunedAlt', 'base'] },
+    { key: 'countB_dAlt', label: 'Δ Count B (Tuned-alt vs Base)', kind: 'reldelta', field: 'countB', pair: ['tunedAlt', 'base'] },
   ];
   const METRIC_BY_KEY = {};
   METRICS.forEach(m => { METRIC_BY_KEY[m.key] = m; });
 
   const DATASET_KEYS = Object.keys(DATA);
   const ALL_APPS = DATA[DATASET_KEYS[0]].apps;
-  const ALL_CACHELINES = ['1024', '512', '256', '128'];
+  const ALL_SIZES = ['1024', '512', '256', '128'];
 
   const DIMENSIONS = [
     { key: 'dataset',   label: 'Dataset',          values: DATASET_KEYS,             labelFor: v => v },
     { key: 'app',       label: 'Application',      values: ALL_APPS,                 labelFor: v => v },
-    { key: 'gpu',       label: 'GPU',              values: GPUS,                     labelFor: v => v },
-    { key: 'cacheline', label: 'Cache-line count', values: ALL_CACHELINES,           labelFor: v => v },
+    { key: 'device',       label: 'Device',              values: DEVICES,                     labelFor: v => v },
+    { key: 'size', label: 'Size', values: ALL_SIZES,           labelFor: v => v },
     { key: 'metric',    label: 'Metric',           values: METRICS.map(m => m.key),  labelFor: v => METRIC_BY_KEY[v].label },
     { key: 'variant',   label: 'Variant',          values: VARIANTS,                 labelFor: v => VARIANT_LABEL[v] },
   ];
@@ -948,7 +948,7 @@
   // *defaults* to Facets, which is where it used to be nailed down.
   const GROUPABLE_KEYS = DIM_KEYS.filter(k => k !== 'metric');
 
-  const CAT_PALETTE = ['var(--series-base)', 'var(--series-kbk)', 'var(--series-kbki)', 'var(--app-4)', 'var(--app-5)', 'var(--cat-6)', 'var(--cat-7)', 'var(--cat-8)'];
+  const CAT_PALETTE = ['var(--series-base)', 'var(--series-tuned)', 'var(--series-tuned-alt)', 'var(--app-4)', 'var(--app-5)', 'var(--cat-6)', 'var(--cat-7)', 'var(--cat-8)'];
   const SEP = ' · '; // joins the parts of a composite (multi-dimension) axis label
   function dimValueColor(dimKey, value) {
     const dim = DIM_BY_KEY[dimKey];
@@ -957,11 +957,11 @@
   }
   function dimValueLabel(dimKey, value) { return DIM_BY_KEY[dimKey].labelFor(value); }
 
-  function findCombo(datasetKey, gpu, cacheline) {
-    return DATA[datasetKey].combos.find(c => c.gpu === gpu && c.threads === cacheline);
+  function findCombo(datasetKey, device, size) {
+    return DATA[datasetKey].combos.find(c => c.device === device && c.size === size);
   }
-  function rawFieldValue(datasetKey, app, gpu, cacheline, field, variant) {
-    const combo = findCombo(datasetKey, gpu, cacheline);
+  function rawFieldValue(datasetKey, app, device, size, field, variant) {
+    const combo = findCombo(datasetKey, device, size);
     if (!combo) return null;
     const appData = DATA[datasetKey].data[app];
     if (!appData) return null;
@@ -974,20 +974,20 @@
     const m = METRIC_BY_KEY[ctx.metric];
     if (!m) return null;
     if (m.kind === 'delta' || m.kind === 'reldelta') {
-      const a = rawFieldValue(ctx.dataset, ctx.app, ctx.gpu, ctx.cacheline, m.field, m.pair[0]);
-      const b = rawFieldValue(ctx.dataset, ctx.app, ctx.gpu, ctx.cacheline, m.field, m.pair[1]);
+      const a = rawFieldValue(ctx.dataset, ctx.app, ctx.device, ctx.size, m.field, m.pair[0]);
+      const b = rawFieldValue(ctx.dataset, ctx.app, ctx.device, ctx.size, m.field, m.pair[1]);
       if (a === null || b === null) return null;
       if (m.kind === 'reldelta') return b === 0 ? null : ((a - b) / b) * 100;
       return a - b;
     }
-    return rawFieldValue(ctx.dataset, ctx.app, ctx.gpu, ctx.cacheline, m.field, ctx.variant);
+    return rawFieldValue(ctx.dataset, ctx.app, ctx.device, ctx.size, m.field, ctx.variant);
   }
 
   // ---- plot spec ----
   let plotIdSeq = 1;
   function defaultIncluded(dimKey) {
-    if (dimKey === 'dataset') return ['32x32'];
-    if (dimKey === 'metric') return ['L1'];
+    if (dimKey === 'dataset') return ['setA'];
+    if (dimKey === 'metric') return ['rateA'];
     return DIM_BY_KEY[dimKey].values.slice();
   }
   // Grouping is a partition of the groupable dims across three zones. Any number of
@@ -1000,7 +1000,7 @@
     { key: 'facet',  label: 'Facets',  hint: 'splits into separate charts — usually leave empty' },
   ];
   const ZONE_KEYS = ZONES.map(z => z.key);
-  // Metric-only fourth zone. A hit rate (%) and an access count share no y-scale, so
+  // Metric-only fourth zone. A a percentage and a raw count share no y-scale, so
   // they can never be bars on one axis — stacked panels over a shared x-axis is the
   // correct way to read them together.
   const CHART_TYPES = [
@@ -1011,7 +1011,7 @@
   // charts that name their axes Rows/Columns rather than Series/X-axis
   function isGridType(t) { return t === 'matrix' || t === 'table'; }
 
-  const PANEL_ZONE = { key: 'panel', label: 'Panels', hint: 'one stacked sub-chart per metric over a shared x-axis — the way to combine hit rate and access count' };
+  const PANEL_ZONE = { key: 'panel', label: 'Panels', hint: 'one stacked sub-chart per metric over a shared x-axis — the way to combine a percentage and a raw count' };
   const METRIC_ZONE_KEYS = ZONE_KEYS.concat([PANEL_ZONE.key]);
 
   function makeDefaultPlot() {
@@ -1024,7 +1024,7 @@
       dualAxis: false,
       breakLines: true,
       collapseRepeats: true,
-      zones: { x: ['gpu', 'cacheline', 'app'], series: ['variant'], facet: ['dataset'] },
+      zones: { x: ['device', 'size', 'app'], series: ['variant'], facet: ['dataset'] },
       metricZone: 'series',
       metricPos: 99, // index of the Metric chip inside its zone; clamped to the end
       included,
@@ -1485,7 +1485,7 @@
       return;
     }
 
-    // A Δ metric already contains the variant comparison (TAPAS vs KbK), so grouping by
+    // A Δ metric already contains the variant comparison (Tuned vs Base), so grouping by
     // Variant on top of it would just repeat the same bar once per variant. Collapse it.
     const dropVariant = DIVERGING_KINDS.indexOf(kindInfo.kind) !== -1
       && (seriesDims.indexOf('variant') !== -1 || xDims.indexOf('variant') !== -1);
@@ -1512,8 +1512,8 @@
       const ctx = Object.assign({}, fixed, sEntry.vals, xEntry.vals);
       return metricValueAt(ctx);
     }
-    // drop combinations that have no data at all (e.g. 1024-line configs on the 2080,
-    // or TAPAS-interleaved on apps that don't have it) so the axis has no dead slots
+    // drop combinations that have no data at all (e.g. 1024-line configs on the dev1,
+    // or Tuned-altnterleaved on apps that don't have it) so the axis has no dead slots
     const xVals = xAll.filter(x => seriesAll.some(s => getValue(s, x) !== null));
     const sVals = seriesAll.filter(s => xVals.some(x => getValue(s, x) !== null));
     if (xVals.length === 0 || sVals.length === 0) {
@@ -1522,7 +1522,7 @@
     }
 
     // A line may only join points inside one innermost group: crossing into the next
-    // GPU or cache-line block would draw a slope between unrelated configurations.
+    // Device or size block would draw a slope between unrelated configurations.
     let lineBreaks = null;
     if (plot.breakLines !== false && xD.length > 1) {
       lineBreaks = {};
@@ -2058,7 +2058,7 @@
         const barY = rowY0 + 3 + si * (barH + 2);
         const good = val >= 0;
         const bx = Math.min(xPos(0), xPos(val)), bw = Math.max(Math.abs(xPos(val) - xPos(0)), 1);
-        // With several series the bars must be told apart by series (metric, GPU, ...);
+        // With several series the bars must be told apart by series (metric, Device, ...);
         // the sign is still unambiguous because the bar grows left or right of zero.
         // With a single series nothing needs distinguishing, so colour carries polarity.
         const fill = multiSeries ? sv.color : (good ? 'var(--div-pos-2)' : 'var(--div-neg-2)');
@@ -2100,7 +2100,7 @@
   // ---- table leaf ----
   // Rows come from the Rows zone (one leading descriptor column per dimension in it);
   // value columns come from the Columns zone, whose dimensions nest into a multi-row
-  // header — so a heading can read GPU / cache-line / Application / Metric stacked up.
+  // header — so a heading can read Device / size / Application / Metric stacked up.
   // Each cell formats itself from its own metric, which is why a table may mix a
   // percentage and an access count where a chart cannot.
   function renderTableLeaf(container, spec) {
@@ -2659,7 +2659,7 @@
     const defs = Object.keys(TIKZ_COLORS).map(hex => '\\definecolor{' + TIKZ_COLORS[hex] + '}{HTML}{' + hex + '}');
     const out = [];
     out.push('% ' + title);
-    out.push('% Generated by the cache data explorer.');
+    out.push('% Generated by the data explorer.');
     out.push('% Requires: \\usepackage{tikz}' + (figures.some(f => f.kind === 'table') ? ', \\usepackage{booktabs}' : ''));
     out.push('% Coordinates are in points with the y axis flipped, so the figure matches the');
     out.push('% on-screen layout exactly. Each figure below is preceded by its natural size');
@@ -2782,7 +2782,7 @@
     const files = [];
     const tex = [];
     tex.push('% ' + title);
-    tex.push('% Generated by the cache data explorer.');
+    tex.push('% Generated by the data explorer.');
     tex.push('% Requires: \\usepackage{pgfplots}  \\pgfplotsset{compat=1.18}');
     tex.push('% The numbers live in the .csv next to this file, so restyling the figure');
     tex.push('% never means regenerating the data.');
@@ -3009,7 +3009,7 @@
     const roleHint = html('span', 'zone-hint', dataShownHead);
     roleHint.style.marginLeft = '8px';
     roleHint.textContent = plan.metricActive
-      ? '2+ metrics selected — "Metric" is now a chip in Grouping below; drop it in Panels to combine different scales (e.g. hit rate + access count).'
+      ? '2+ metrics selected — "Metric" is now a chip in Grouping below; drop it in Panels to combine different scales (e.g. a percentage and a raw count).'
       : 'Select a 2nd metric to compare two metrics inside one chart.';
     renderDimIncludedBlock(dataShownBlock, plot, 'metric', onDimChange);
 
@@ -3057,8 +3057,8 @@
   }
 
   // ---- persistence: autosave, named views, export/import ----
-  const LS_AUTOSAVE_KEY = 'cache-explorer-builder-autosave-v1';
-  const LS_VIEWS_KEY = 'cache-explorer-builder-views-v1';
+  const LS_AUTOSAVE_KEY = 'viz-builder-autosave-v1';
+  const LS_VIEWS_KEY = 'viz-builder-views-v1';
 
   function serializePlots() {
     return plots.map(p => ({
@@ -3098,7 +3098,7 @@
     if (missing.length) out.facet = missing.concat(out.facet);
     if (out.x.length === 0 && out.series.length === 0 && out.facet.length === GROUPABLE_KEYS.length
         && !(p && (p.zones || p.groupOrder))) {
-      return { x: ['gpu', 'cacheline', 'app'], series: ['variant'], facet: ['dataset'] };
+      return { x: ['device', 'size', 'app'], series: ['variant'], facet: ['dataset'] };
     }
     return out;
   }
@@ -3193,7 +3193,7 @@
       const blob = new Blob([JSON.stringify({ plots: serializePlots() }, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'cache-explorer-view.json';
+      a.href = url; a.download = 'viz-view.json';
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) {

@@ -73,7 +73,7 @@ console.log('\n=== 3. The duplicated delta values ===');
 {
   const { w, d } = boot(false);
   setType(w, d, 'table');
-  add(d, 'Δ L1 (TAPAS−KbK)');
+  add(d, 'Δ Rate A (Tuned−Base)');
   setZone(w, d, 'metric', 'x');
   // columns are ... x Variant x Metric, so each delta appears once per variant
   const all = rows(d);
@@ -99,7 +99,7 @@ console.log('\n=== 4. The user can switch it off ===');
 {
   const { w, d } = boot(false);
   setType(w, d, 'table');
-  add(d, 'Δ L1 (TAPAS−KbK)');
+  add(d, 'Δ Rate A (Tuned−Base)');
   setZone(w, d, 'metric', 'x');
   const lab = Array.from(d.querySelectorAll('#plots .head-toggle')).find(l => /collapse repeated/.test(l.textContent));
   ok(!!lab, 'the toggle is offered');
@@ -123,7 +123,7 @@ console.log('\n=== 5. Not offered when it cannot apply ===');
 
   const b2 = boot(false);
   setType(b2.w, b2.d, 'table');
-  add(b2.d, 'Δ L1 (TAPAS−KbK)');
+  add(b2.d, 'Δ Rate A (Tuned−Base)');
   setZone(b2.w, b2.d, 'metric', 'x');
   setZone(b2.w, b2.d, 'variant', 'facet');
   ok(!Array.from(b2.d.querySelectorAll('#plots .head-toggle')).some(l => /collapse repeated/.test(l.textContent)),
@@ -136,7 +136,7 @@ console.log('\n=== 6. Works with Variant on the rows instead of the columns ==='
 {
   const { w, d } = boot(false);
   setType(w, d, 'table');
-  add(d, 'Δ L1 (TAPAS−KbK)');
+  add(d, 'Δ Rate A (Tuned−Base)');
   setZone(w, d, 'metric', 'x');
   setZone(w, d, 'variant', 'series');   // variant becomes the row dimension
   const marked = d.querySelectorAll('#plots .plot-table td.repeat').length;
@@ -150,17 +150,17 @@ console.log('\n=== 7. Persists ===');
 {
   const { w, d } = boot(false);
   setType(w, d, 'table');
-  add(d, 'Δ L1 (TAPAS−KbK)');
+  add(d, 'Δ Rate A (Tuned−Base)');
   setZone(w, d, 'metric', 'x');
   const cb = Array.from(d.querySelectorAll('#plots .head-toggle')).find(l => /collapse repeated/.test(l.textContent)).querySelector('input');
   cb.checked = false; cb.dispatchEvent(new w.Event('change'));
   setTimeout(() => {
-    const raw = w.localStorage.getItem('cache-explorer-builder-autosave-v1');
+    const raw = w.localStorage.getItem('viz-builder-autosave-v1');
     ok(JSON.parse(raw)[0].collapseRepeats === false, 'the choice is saved');
     w.close();
     const dom2 = new JSDOM(HTML, {
       runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true, url: 'https://example.com/',
-      beforeParse(win) { win.localStorage.setItem('cache-explorer-builder-autosave-v1', raw); },
+      beforeParse(win) { win.localStorage.setItem('viz-builder-autosave-v1', raw); },
     });
     const d2 = dom2.window.document;
     d2.querySelector('.mode-tab[data-mode="builder"]').click();

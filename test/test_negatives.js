@@ -54,7 +54,7 @@ const ticks = (d, sel) => Array.from(d.querySelectorAll('#plots ' + (sel || 'tex
 console.log('\n=== 1. Bar chart of a delta: bars hang below a real zero line ===');
 {
   const { w, d } = boot();
-  rm(d, 'L1 hit rate'); add(d, 'Δ L1 (TAPAS−KbK)');
+  rm(d, 'Rate A'); add(d, 'Δ Rate A (Tuned−Base)');
   const t = ticks(d);
   ok(t.some(x => x.indexOf('-') === 0), 'the axis has a negative tick', t.join(' '));
   ok(t.indexOf('0pt') !== -1, 'and a zero tick', t.join(' '));
@@ -72,7 +72,7 @@ console.log('\n=== 2. Line chart of a delta stays a line chart ===');
 {
   const { w, d } = boot();
   setType(w, d, 'lines');
-  rm(d, 'L1 hit rate'); add(d, 'Δ L1 (TAPAS−KbK)');
+  rm(d, 'Rate A'); add(d, 'Δ Rate A (Tuned−Base)');
   ok(d.querySelectorAll('#plots polyline.series-line').length > 0, 'it draws lines');
   ok(d.querySelectorAll('#plots circle.series-dot').length === 55, 'with a marker per point', d.querySelectorAll('#plots circle.series-dot').length);
   ok(d.querySelectorAll('#plots text.row-label').length === 0, 'and is no longer silently swapped for horizontal bars');
@@ -86,7 +86,7 @@ console.log('\n=== 3. The horizontal view is still available, on purpose ===');
 {
   const { w, d } = boot();
   setType(w, d, 'diverging');
-  rm(d, 'L1 hit rate'); add(d, 'Δ L1 (TAPAS−KbK)');
+  rm(d, 'Rate A'); add(d, 'Δ Rate A (Tuned−Base)');
   ok(d.querySelectorAll('#plots text.row-label').length > 0, 'Diverging bars gives the ranked horizontal view');
   ok(d.querySelectorAll('#plots rect.bar').length > 0, 'and renders');
   w.close();
@@ -95,8 +95,8 @@ console.log('\n=== 3. The horizontal view is still available, on purpose ===');
 console.log('\n=== 4. Dual axis with a negative secondary scale ===');
 {
   const { w, d } = boot();
-  add(d, 'Δ L1 (TAPAS−KbK)');
-  ok(toggle(w, d, 'second y-axis'), 'offered for hit rate + delta');
+  add(d, 'Δ Rate A (Tuned−Base)');
+  ok(toggle(w, d, 'second y-axis'), 'offered for a percentage + a delta');
   const right = ticks(d, 'text.axis-right');
   ok(right.some(x => x.indexOf('-') === 0), 'the right axis now shows its negative range', right.join(' '));
   ok(right.some(x => x.indexOf('0') === 0 || x === '0pt'), 'including zero', right.join(' '));
@@ -112,8 +112,8 @@ console.log('\n=== 4. Dual axis with a negative secondary scale ===');
 console.log('\n=== 5. Three kinds at once: panels are consistent and aligned ===');
 {
   const { w, d } = boot();
-  add(d, 'L1 access count');
-  add(d, 'Δ L1 (TAPAS−KbK)');
+  add(d, 'Count A');
+  add(d, 'Δ Rate A (Tuned−Base)');
   const panels = d.querySelectorAll('#plots .metric-panel');
   ok(panels.length === 3, 'one panel per metric', panels.length);
   const widths = Array.from(panels).map(p => p.querySelector('svg').getAttribute('width'));
@@ -136,7 +136,7 @@ console.log('\n=== 5. Three kinds at once: panels are consistent and aligned ===
 console.log('\n=== 6. Relative access-count deltas (large negative %) ===');
 {
   const { w, d } = boot();
-  rm(d, 'L1 hit rate'); add(d, 'Δ L2 accesses (TAPAS vs KbK)');
+  rm(d, 'Rate A'); add(d, 'Δ Count B (Tuned vs Base)');
   const t = ticks(d);
   ok(t.some(x => /^-/.test(x) && /%$/.test(x)), 'negative percent ticks', t.join(' '));
   ok(escapes(d).length === 0, 'nothing outside the frame', escapes(d).slice(0, 3).join('; '));

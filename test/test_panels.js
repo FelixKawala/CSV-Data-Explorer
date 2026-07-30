@@ -45,12 +45,12 @@ console.log('\n=== A. Access-count delta metrics exist ===');
 {
   const { window, doc } = boot();
   const avail = Array.from(dataShownCols(doc)[1].querySelectorAll('.dnd-chip')).map(c => c.textContent.replace(/[+×]$/, ''));
-  const accDeltas = avail.filter(t => /accesses/.test(t));
+  const accDeltas = avail.filter(t => /^\u0394 Count/.test(t));
   ok(accDeltas.length === 4, 'four access-count delta metrics offered', accDeltas.join(' | '));
-  ok(accDeltas.some(t => /TAPAS-i/.test(t)), 'includes TAPAS-interleaved variants');
+  ok(accDeltas.some(t => /Tuned-alt/.test(t)), 'includes the sparse-variant comparisons');
 
-  removeMetric(doc, 'L1 hit rate');
-  addMetric(doc, 'Δ L1 accesses (TAPAS vs KbK)');
+  removeMetric(doc, 'Rate A');
+  addMetric(doc, 'Δ Count A (Tuned vs Base)');
   const bars = doc.querySelectorAll('#plots rect.bar').length;
   ok(bars > 0, 'renders as a diverging chart', bars);
   const ticks = Array.from(doc.querySelectorAll('#plots text.axis-label')).map(t => t.textContent);
@@ -64,29 +64,29 @@ console.log('\n=== B. Access delta values are correct ===');
 {
   const { window, doc } = boot();
   // pull the numbers straight out of the table view and check one against the raw dataset
-  removeMetric(doc, 'L1 hit rate');
-  addMetric(doc, 'Δ L1 accesses (TAPAS vs KbK)');
+  removeMetric(doc, 'Rate A');
+  addMetric(doc, 'Δ Count A (Tuned vs Base)');
   doc.querySelector('#plots .table-toggle').click();
   const rows = Array.from(doc.querySelectorAll('#plots .data-table tbody tr')).map(tr =>
     Array.from(tr.querySelectorAll('td')).map(td => td.textContent));
   ok(rows.length > 0, 'table rows produced', rows.length);
   const DATA = JSON.parse(doc.querySelector('script[type="application/json"]').textContent);
-  // columns: dataset, app, gpu, cacheline, metric, variant, value
-  const r = rows.find(row => row[6] !== '—' && DATA[row[0]].combos.some(c => c.gpu === row[2] && c.threads === row[3]));
+  // columns: dataset, app, device, size, metric, variant, value
+  const r = rows.find(row => row[6] !== '—' && DATA[row[0]].combos.some(c => c.device === row[2] && c.size === row[3]));
   ok(!!r, 'found a row with real data', r && r.join('/'));
-  const combo = DATA[r[0]].combos.find(c => c.gpu === r[2] && c.threads === r[3]);
-  const pt = DATA[r[0]].data[r[1]][combo.key].L1_access;
-  const expect = ((pt.kbk - pt.base) / pt.base) * 100;
+  const combo = DATA[r[0]].combos.find(c => c.device === r[2] && c.size === r[3]);
+  const pt = DATA[r[0]].data[r[1]][combo.key].countA;
+  const expect = ((pt.tuned - pt.base) / pt.base) * 100;
   const got = parseFloat(r[6]);
   ok(Math.abs(got - expect) < 0.05, 'first row matches (a-b)/b*100 from the raw data',
      r.slice(0, 4).join('/') + ' got ' + got + ' expect ' + expect.toFixed(1));
   window.close();
 }
 
-console.log('\n=== C. Hit rate + access count in one plot via Panels ===');
+console.log('\n=== C. Two scales in one plot via Panels ===');
 {
   const { window, doc } = boot();
-  addMetric(doc, 'L1 access count');
+  addMetric(doc, 'Count A');
   // incompatible scales must not dead-end: the plot falls back to panels on its own
   ok(!doc.querySelector('#plots .plot-empty'), 'no refusal message');
   const why = Array.from(doc.querySelectorAll('#plots .chart-note')).map(n => n.textContent).join(' ');
@@ -99,7 +99,7 @@ console.log('\n=== C. Hit rate + access count in one plot via Panels ===');
   const panels = doc.querySelectorAll('#plots .metric-panel');
   ok(panels.length === 2, 'two stacked sub-charts', panels.length);
   const titles = Array.from(panels).map(p => p.querySelector('.panel-name').textContent);
-  ok(titles.join(' + ') === 'L1 hit rate + L1 access count', 'each panel names its metric', titles.join(' + '));
+  ok(titles.join(' + ') === 'Rate A + Count A', 'each panel names its metric', titles.join(' + '));
   ok(doc.querySelectorAll('#plots .plot-empty').length === 0, 'no refusal message any more');
 
   // panel 1 is a % scale, panel 2 is a log count scale -> separate y axes, one x axis
@@ -121,8 +121,8 @@ console.log('\n=== C. Hit rate + access count in one plot via Panels ===');
 console.log('\n=== D. Panels with three metrics incl. a delta ===');
 {
   const { window, doc } = boot();
-  addMetric(doc, 'L2 access count');
-  addMetric(doc, 'Δ L1 (TAPAS−KbK)');
+  addMetric(doc, 'Count B');
+  addMetric(doc, 'Δ Rate A (Tuned−Base)');
   setZone(window, doc, 'metric', 'panel');
   const panels = doc.querySelectorAll('#plots .metric-panel');
   ok(panels.length === 3, 'three stacked panels', panels.length);
@@ -134,7 +134,7 @@ console.log('\n=== D. Panels with three metrics incl. a delta ===');
 console.log('\n=== E. Panels survive a save/reload and work in matrix mode ===');
 {
   const { window, doc } = boot();
-  addMetric(doc, 'L1 access count');
+  addMetric(doc, 'Count A');
   setZone(window, doc, 'metric', 'panel');
   const sel = doc.querySelector('#plots .plot-head select');
   sel.value = 'matrix';
@@ -144,14 +144,14 @@ console.log('\n=== E. Panels survive a save/reload and work in matrix mode ===')
   ok(scanAnomalies(doc).length === 0, 'no matrix panel anomalies');
 
   setTimeout(() => {
-    const raw = window.localStorage.getItem('cache-explorer-builder-autosave-v1');
+    const raw = window.localStorage.getItem('viz-builder-autosave-v1');
     const saved = JSON.parse(raw);
     ok(saved[0].metricZone === 'panel', 'metricZone:panel persisted', saved[0].metricZone);
     window.close();
 
     const dom2 = new JSDOM(HTML, {
       runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true, url: 'https://example.com/',
-      beforeParse(w) { w.localStorage.setItem('cache-explorer-builder-autosave-v1', raw); },
+      beforeParse(w) { w.localStorage.setItem('viz-builder-autosave-v1', raw); },
     });
     const d2 = dom2.window.document;
     d2.querySelector('.mode-tab[data-mode="builder"]').click();

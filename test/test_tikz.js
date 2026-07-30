@@ -98,7 +98,7 @@ function texProblems(tex) {
     // weight must follow the CSS: tick labels regular, nested band labels semibold
     const tickNode = (f.text.match(/^.*\{\d+\\%\};$/m) || [''])[0];
     ok(tickNode && !/bfseries/.test(tickNode), 'tick labels are not spuriously bolded', tickNode.slice(0, 80));
-    const bandNode = (f.text.match(/^.*\{5090\};$/m) || [''])[0];
+    const bandNode = (f.text.match(/^.*\{dev3\};$/m) || [''])[0];
     ok(bandNode && /bfseries/.test(bandNode), 'but the grouping band labels keep their weight', bandNode.slice(0, 80));
     w.close();
   }
@@ -106,12 +106,12 @@ function texProblems(tex) {
   console.log('\n=== 2. Export at facet, panel and plot level ===');
   {
     const { w, d } = boot();
-    setZone(w, d, 'gpu', 'facet');
+    setZone(w, d, 'device', 'facet');
     const facetBtns = d.querySelectorAll('#plots .facet-card > h5 button');
     ok(facetBtns.length === 3, 'a button per facet card', facetBtns.length);
     const one = await grab(w, () => facetBtns[0].click());
     ok((one.text.match(/\\begin\{tikzpicture\}/g) || []).length === 1, 'a facet exports just its own charts');
-    ok(/GPU: 2080/.test(one.text), 'and captions it', (/% --- (.*) ---/.exec(one.text) || [])[1]);
+    ok(/Device: dev1/.test(one.text), 'and captions it', (/% --- (.*) ---/.exec(one.text) || [])[1]);
 
     const whole = await grab(w, () => Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'Export TikZ').click());
     ok((whole.text.match(/\\begin\{tikzpicture\}/g) || []).length === 3, 'the plot-level button exports all three facets',
@@ -125,12 +125,12 @@ function texProblems(tex) {
   console.log('\n=== 3. Panels ===');
   {
     const { w, d } = boot();
-    add(d, 'L1 access count');
+    add(d, 'Count A');
     const panelBtns = d.querySelectorAll('#plots .metric-panel .panel-title button');
     ok(panelBtns.length === 2, 'a button per stacked panel', panelBtns.length);
     const p = await grab(w, () => panelBtns[1].click());
     ok((p.text.match(/\\begin\{tikzpicture\}/g) || []).length === 1, 'exports that panel alone');
-    ok(/L1 access count/.test(p.text), 'captioned with the metric');
+    ok(/Count A/.test(p.text), 'captioned with the metric');
     ok(texProblems(p.text).length === 0, 'sound', texProblems(p.text).join('; '));
     w.close();
   }
@@ -139,7 +139,7 @@ function texProblems(tex) {
   {
     for (const t of ['bars', 'lines', 'diverging', 'matrix']) {
       const { w, d } = boot();
-      if (t === 'diverging') { rm(d, 'L1 hit rate'); add(d, 'Δ L1 (TAPAS−KbK)'); }
+      if (t === 'diverging') { rm(d, 'Rate A'); add(d, 'Δ Rate A (Tuned−Base)'); }
       setType(w, d, t);
       const f = await grab(w, () => d.querySelector('#plots .leaf-tools button').click());
       const probs = texProblems(f.text);
@@ -169,13 +169,13 @@ function texProblems(tex) {
   console.log('\n=== 6. LaTeX-hostile characters are escaped, and the legend travels ===');
   {
     const { w, d } = boot();
-    rm(d, 'L1 hit rate');
-    add(d, 'Δ L1 (TAPAS−KbK)');
-    add(d, 'Δ L2 (TAPAS−KbK)');      // two delta series -> legend carries their labels
+    rm(d, 'Rate A');
+    add(d, 'Δ Rate A (Tuned−Base)');
+    add(d, 'Δ Rate B (Tuned−Base)');      // two delta series -> legend carries their labels
     const f = await grab(w, () => d.querySelector('#plots .leaf-tools button').click());
     ok(/\$\\Delta\$/.test(f.text), 'Delta becomes a math symbol');
     ok(!/[^\x00-\x7F]/.test(f.text.replace(/^%.*$/gm, '')), 'no raw unicode survives');
-    ok(/TAPAS/.test(f.text) && /KbK/.test(f.text), 'the legend labels are in the picture');
+    ok(/Tuned/.test(f.text) && /Base/.test(f.text), 'the legend labels are in the picture');
     ok(texProblems(f.text).length === 0, 'sound', texProblems(f.text).join('; '));
     w.close();
   }
@@ -185,7 +185,7 @@ function texProblems(tex) {
     const { w, d } = boot();
     const f = await grab(w, () => d.querySelector('#plots .leaf-tools button').click());
     ok(/\\%/.test(f.text), 'percent signs on the axis are escaped');
-    ok(/\{KbK\}/.test(f.text) && /TAPAS \(interleaved\)/.test(f.text.replace(/\\/g, '')),
+    ok(/\{Base\}/.test(f.text) && /Tuned-alt/.test(f.text.replace(/\\/g, '')),
        'every series in the legend is drawn into the figure');
     const legendFills = (f.text.match(/rounded corners=1pt/g) || []).length;
     ok(legendFills === 3, 'with a swatch each', legendFills);
@@ -197,7 +197,7 @@ function texProblems(tex) {
   {
     const { w, d } = boot();
     setType(w, d, 'lines');
-    add(d, 'L1 access count');
+    add(d, 'Count A');
     const cb = Array.from(d.querySelectorAll('#plots .head-toggle')).find(l => /second y-axis/.test(l.textContent)).querySelector('input');
     cb.checked = true; cb.dispatchEvent(new w.Event('change'));
     const f = await grab(w, () => d.querySelector('#plots .leaf-tools button').click());

@@ -23,12 +23,12 @@ console.log('\n=== 1. On by default: one line per innermost group ===');
 {
   const { w, d } = boot();
   setType(w, d, 'lines');
-  // x = GPU > cache-line > Application, so each (GPU, cache-line) block gets its own line
+  // x = Device > size > Application, so each (Device, size) block gets its own line
   const cb = box(d, 'break lines per group');
   ok(!!cb, 'the checkbox is offered');
   ok(cb.querySelector('input').checked, 'and is on by default');
   const s = segs(d);
-  ok(s.length === 22, 'one segment per (GPU, cache-line) block per continuous series', s.length);
+  ok(s.length === 22, 'one segment per (Device, size) block per continuous series', s.length);
   ok(s.every(n => n === 5), 'each spans exactly the 5 applications', Array.from(new Set(s)).join(','));
   ok(d.querySelectorAll('#plots circle.series-dot').length === 121, 'every point still has its marker');
   w.close();
@@ -48,14 +48,14 @@ console.log('\n=== 3. It follows the grouping, not a fixed dimension ===');
 {
   const { w, d } = boot();
   setType(w, d, 'lines');
-  // reorder so the innermost dimension is the cache-line sweep
+  // reorder so the innermost dimension is the size sweep
   const chip = d.querySelector('#plots .zone-chip[data-dim="app"]');
   Array.from(chip.querySelectorAll('button.mini')).find(b => b.textContent === '◀').click();
   const zone = Array.from(d.querySelectorAll('#plots .zone[data-zone="x"] .zone-chip')).map(c => c.getAttribute('data-dim'));
-  ok(zone.join(',') === 'gpu,app,cacheline', 'x is now GPU > Application > cache-line', zone.join(','));
+  ok(zone.join(',') === 'device,app,size', 'x is now Device > Application > size', zone.join(','));
   const s = segs(d);
-  ok(s.every(n => n === 3 || n === 4), 'each line is now one cache-line sweep', Array.from(new Set(s)).sort().join(','));
-  ok(s.filter(n => n === 3).length > 0, 'the 2080 blocks are 3 points, having no 1024 config', s.filter(n => n === 3).length);
+  ok(s.every(n => n === 3 || n === 4), 'each line is now one size sweep', Array.from(new Set(s)).sort().join(','));
+  ok(s.filter(n => n === 3).length > 0, 'the dev1 blocks are 3 points, having no 1024 config', s.filter(n => n === 3).length);
   w.close();
 }
 
@@ -63,7 +63,7 @@ console.log('\n=== 4. Hidden when there is nothing to break on ===');
 {
   const { w, d } = boot();
   setType(w, d, 'lines');
-  setZone(w, d, 'gpu', 'facet');
+  setZone(w, d, 'device', 'facet');
   setZone(w, d, 'app', 'facet');
   ok(!box(d, 'break lines per group'), 'not offered when the x-axis has a single dimension');
   const s = segs(d);
@@ -79,7 +79,7 @@ console.log('\n=== 5. Applies to the dual-axis chart too ===');
   const { w, d } = boot();
   setType(w, d, 'lines');
   const avail = d.querySelectorAll('#plots .data-shown-block .dual-col')[1];
-  Array.from(avail.querySelectorAll('.dnd-chip')).find(c => /L1 access count/.test(c.textContent)).click();
+  Array.from(avail.querySelectorAll('.dnd-chip')).find(c => /Count A/.test(c.textContent)).click();
   flip(w, d, 'second y-axis');
   const solid = Array.from(d.querySelectorAll('#plots polyline.series-line')).filter(p => !p.getAttribute('stroke-dasharray'));
   const dashed = Array.from(d.querySelectorAll('#plots polyline.series-line')).filter(p => p.getAttribute('stroke-dasharray'));
@@ -95,12 +95,12 @@ console.log('\n=== 6. Persists ===');
   setType(w, d, 'lines');
   flip(w, d, 'break lines per group');   // turn it off
   setTimeout(() => {
-    const raw = w.localStorage.getItem('cache-explorer-builder-autosave-v1');
+    const raw = w.localStorage.getItem('viz-builder-autosave-v1');
     ok(JSON.parse(raw)[0].breakLines === false, 'the choice is saved', JSON.parse(raw)[0].breakLines);
     w.close();
     const dom2 = new JSDOM(HTML, {
       runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true, url: 'https://example.com/',
-      beforeParse(win) { win.localStorage.setItem('cache-explorer-builder-autosave-v1', raw); },
+      beforeParse(win) { win.localStorage.setItem('viz-builder-autosave-v1', raw); },
     });
     const d2 = dom2.window.document;
     d2.querySelector('.mode-tab[data-mode="builder"]').click();
@@ -110,7 +110,7 @@ console.log('\n=== 6. Persists ===');
     const old = JSON.parse(raw); delete old[0].breakLines;
     const dom3 = new JSDOM(HTML, {
       runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true, url: 'https://example.com/',
-      beforeParse(win) { win.localStorage.setItem('cache-explorer-builder-autosave-v1', JSON.stringify(old)); },
+      beforeParse(win) { win.localStorage.setItem('viz-builder-autosave-v1', JSON.stringify(old)); },
     });
     const d3 = dom3.window.document;
     d3.querySelector('.mode-tab[data-mode="builder"]').click();

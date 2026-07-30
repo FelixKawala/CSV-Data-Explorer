@@ -37,9 +37,9 @@ console.log('\n=== G. Hierarchical gaps between groups ===');
 {
   const { window, doc } = boot();
   toBuilder(doc);
-  // x = gpu > cacheline > app, so bar groups are (gpu, cacheline, app) triples
+  // x = device > size > app, so bar groups are (device, size, app) triples
   const bars = Array.from(doc.querySelectorAll('#plots rect.bar'));
-  const n = 3; // KbK / TAPAS / TAPAS-i
+  const n = 3; // Base / Tuned / Tuned-alt
   // group start x per group = x of its first bar; derive gaps between consecutive groups
   const groupXs = [];
   const seen = {};
@@ -54,13 +54,13 @@ console.log('\n=== G. Hierarchical gaps between groups ===');
   const gaps = [];
   for (let i = 1; i < ticks.length; i++) gaps.push(Math.round(ticks[i] - ticks[i - 1]));
   const uniq = Array.from(new Set(gaps)).sort((a, b) => a - b);
-  ok(uniq.length >= 3, 'three distinct group spacings (app / cache-line / GPU boundaries)', uniq.join(', '));
+  ok(uniq.length >= 3, 'three distinct group spacings (app / size / Device boundaries)', uniq.join(', '));
   ok(uniq[uniq.length - 1] >= uniq[0] * 1.5, 'outer-boundary gap is clearly wider than the inner one',
      'inner ' + uniq[0] + ' vs outer ' + uniq[uniq.length - 1]);
 
   // bands must still line up with the groups they cover
   const bandYs = Array.from(new Set(Array.from(doc.querySelectorAll('#plots text.axis-band-label')).map(t => t.getAttribute('y'))));
-  ok(bandYs.length === 2, 'two band rows (GPU over cache-line)', bandYs.join(', '));
+  ok(bandYs.length === 2, 'two band rows (Device over size)', bandYs.join(', '));
   window.close();
 }
 
@@ -73,10 +73,10 @@ console.log('\n=== H. Grouping applies to delta metrics ===');
   typeSel.dispatchEvent(new window.Event('change'));
   const shown = doc.querySelectorAll('#plots .data-shown-block .dual-col')[0];
   shown.querySelector('.dnd-chip button').click();
-  addMetric(doc, 'Δ L2 (TAPAS−KbK)');
+  addMetric(doc, 'Δ Rate B (Tuned−Base)');
   const heads = Array.from(doc.querySelectorAll('#plots text.axis-band-label')).map(t => t.textContent);
-  ok(heads.indexOf('2080') !== -1, 'GPU headings present on the delta chart', heads.slice(0, 8).join(' | '));
-  ok(heads.filter(h => h === '512').length >= 2, 'cache-line headings repeat under each GPU');
+  ok(heads.indexOf('dev1') !== -1, 'Device headings present on the delta chart', heads.slice(0, 8).join(' | '));
+  ok(heads.filter(h => h === '512').length >= 2, 'size headings repeat under each Device');
   const indents = Array.from(new Set(Array.from(doc.querySelectorAll('#plots text.axis-band-label')).map(t => t.getAttribute('x'))));
   ok(indents.length === 2, 'two indent levels reflect the nesting', indents.join(', '));
   const rows = Array.from(doc.querySelectorAll('#plots text.row-label')).map(t => t.textContent);
@@ -86,9 +86,9 @@ console.log('\n=== H. Grouping applies to delta metrics ===');
   const left = Array.from(doc.querySelectorAll('#plots .zone-chip[data-dim="app"] button.mini')).find(b => b.textContent === '◀');
   left.click(); left.click ? null : null;
   const heads2 = Array.from(doc.querySelectorAll('#plots text.axis-band-label')).map(t => t.textContent);
-  ok(heads2.indexOf('HarrisCorner') !== -1, 'moving Application outward makes it a heading level', heads2.slice(0, 6).join(' | '));
+  ok(heads2.indexOf('alpha') !== -1, 'moving Application outward makes it a heading level', heads2.slice(0, 6).join(' | '));
   const rows2 = Array.from(doc.querySelectorAll('#plots text.row-label')).map(t => t.textContent);
-  ok(rows2.every(r => /^\d+$/.test(r)), 'rows are now cache-line counts', rows2.slice(0, 4).join(','));
+  ok(rows2.every(r => /^\d+$/.test(r)), 'rows are now sizes', rows2.slice(0, 4).join(','));
 
   // Variant is meaningless for a delta metric and must not duplicate bars
   const note = doc.querySelector('#plots .chart-note');
@@ -98,9 +98,9 @@ console.log('\n=== H. Grouping applies to delta metrics ===');
   ok(barsN === rowsN, 'exactly one bar per row, not one per variant', barsN + ' bars / ' + rowsN + ' rows');
 
   // moving a real dim into Series does change the bars per row
-  setZone(window, doc, 'gpu', 'series');
+  setZone(window, doc, 'device', 'series');
   const legend = Array.from(doc.querySelectorAll('#plots .legend .item')).map(i => i.textContent);
-  ok(['2080', '4070', '5090'].every(g => legend.indexOf(g) !== -1), 'each series is named in the legend', legend.join(' | '));
+  ok(['dev1', 'dev2', 'dev3'].every(g => legend.indexOf(g) !== -1), 'each series is named in the legend', legend.join(' | '));
   ok(legend.some(l => /right of zero improved/.test(l)), 'and the sign is still explained', legend.join(' | '));
   const dfills = new Set(Array.from(doc.querySelectorAll('#plots rect.bar')).map(r => r.getAttribute('fill')));
   ok(dfills.size === 3 && !Array.from(dfills).some(f => /div-(pos|neg)/.test(f)),
@@ -113,7 +113,7 @@ console.log('\n=== I. Panels line up after the margin fix ===');
 {
   const { window, doc } = boot();
   toBuilder(doc);
-  addMetric(doc, 'L1 access count');
+  addMetric(doc, 'Count A');
   setZone(window, doc, 'metric', 'panel');
   const panels = doc.querySelectorAll('#plots .metric-panel');
   const svgs = Array.from(panels).map(p => p.querySelector('svg'));

@@ -31,12 +31,12 @@ function setZone(w, d, i, dim, z) {
   const sel = d.querySelectorAll('.plot-card')[i].querySelector('.zone-chip[data-dim="' + dim + '"] select');
   sel.value = z; sel.dispatchEvent(new w.Event('change'));
 }
-const views = w => JSON.parse(w.localStorage.getItem('cache-explorer-builder-views-v1') || '{}');
+const views = w => JSON.parse(w.localStorage.getItem('viz-builder-views-v1') || '{}');
 
 console.log('\n=== Load works with confirm() suppressed (the sandbox case) ===');
 {
   const { w, d } = boot();
-  setZone(w, d, 0, 'gpu', 'facet');
+  setZone(w, d, 0, 'device', 'facet');
   bar(d).querySelector('input.name-input').value = 'A';
   btn(d, 'Save view').click();
   ok(status(d).indexOf('Saved "A"') === 0, 'save reports what happened', status(d));
@@ -47,7 +47,7 @@ console.log('\n=== Load works with confirm() suppressed (the sandbox case) ===')
 
   btn(d, 'Load').click();
   ok(nplots(d) === 1, 'Load still replaces even though confirm() returns false', nplots(d));
-  ok(xzones(d, 0) === 'cacheline,app', 'the loaded view is the saved one', xzones(d, 0));
+  ok(xzones(d, 0) === 'size,app', 'the loaded view is the saved one', xzones(d, 0));
   ok(/replaced 3 plots/.test(status(d)), 'it says what it replaced', status(d));
   w.close();
 }

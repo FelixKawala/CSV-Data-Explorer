@@ -50,12 +50,12 @@ console.log('\n=== 1. Line chart ===');
   const lines = d.querySelectorAll('#plots polyline.series-line');
   const dots = d.querySelectorAll('#plots circle.series-dot');
   ok(dots.length === 121, 'a marker per data point, same count as the bars had', dots.length);
-  ok(lines.length === 22, 'lines break per (GPU, cache-line) block by default', lines.length);
+  ok(lines.length === 22, 'lines break per (Device, size) block by default', lines.length);
   ok(d.querySelectorAll('#plots rect.bar').length === 0, 'no bars in line mode');
   const bands = Array.from(d.querySelectorAll('#plots text.axis-band-label')).map(t => t.textContent);
-  ok(bands.indexOf('5090') !== -1, 'nested grouping bands still drawn', bands.slice(0, 4).join(' '));
+  ok(bands.indexOf('dev3') !== -1, 'nested grouping bands still drawn', bands.slice(0, 4).join(' '));
   const legend = Array.from(d.querySelectorAll('#plots .legend .item')).map(i => i.textContent);
-  ok(legend.join(',') === 'KbK,TAPAS,TAPAS (interleaved)', 'legend names all three series', legend.join(','));
+  ok(legend.join(',') === 'Base,Tuned,Tuned-alt', 'legend names all three series', legend.join(','));
   ok(anomalies(d).length === 0, 'no coordinate anomalies', anomalies(d).slice(0, 3).join('; '));
   w.close();
 }
@@ -64,14 +64,14 @@ console.log('\n=== 2. Isolated points are never joined across a gap ===');
 {
   const { w, d } = boot();
   setType(w, d, 'lines');
-  // TAPAS-interleaved exists only for HarrisCorner, so its points are isolated: it must
+  // the sparse variant exists only for alpha, so its points are isolated: it must
   // get markers but no segments, rather than a line implying data it does not have
   const counts = Array.from(d.querySelectorAll('#plots polyline.series-line'))
     .map(l => l.getAttribute('points').trim().split(' ').length);
   ok(counts.every(c => c === 5), 'every segment covers one block of 5 applications', Array.from(new Set(counts)).join(','));
   const dots = d.querySelectorAll('#plots circle.series-dot').length;
   ok(dots === 121, 'every real point still has a marker', dots);
-  ok(dots - counts.reduce((a, b) => a + b, 0) === 11, 'the 11 interleaved points are drawn unconnected',
+  ok(dots - counts.reduce((a, b) => a + b, 0) === 11, 'the 11 sparse-variant points are drawn unconnected',
      dots - counts.reduce((a, b) => a + b, 0));
   w.close();
 }
@@ -80,19 +80,19 @@ console.log('\n=== 2b. Lines over an ordered inner axis (the real use case) ==='
 {
   const { w, d } = boot();
   setType(w, d, 'lines');
-  // x = cache-line count only, one chart per app+GPU: now a line means something
+  // x = size only, one chart per app+Device: now a line means something
   setZone(w, d, 'app', 'facet');
-  setZone(w, d, 'gpu', 'facet');
+  setZone(w, d, 'device', 'facet');
   const lines = Array.from(d.querySelectorAll('#plots polyline.series-line'));
   ok(lines.length >= 30, 'a line per variant per facet', lines.length);
   const pts = lines.map(l => l.getAttribute('points').trim().split(' ').length);
-  ok(pts.some(c => c === 4) || pts.some(c => c === 3), 'each traces the cache-line sweep', Array.from(new Set(pts)).join(','));
-  // read one leaf only: the 2080 has no 1024-line config, so facets differ in length
+  ok(pts.some(c => c === 4) || pts.some(c => c === 3), 'each traces the size sweep', Array.from(new Set(pts)).join(','));
+  // read one leaf only: the dev1 has no 1024-line config, so facets differ in length
   const leaves = Array.from(d.querySelectorAll('#plots .facet-card')).filter(c => c.querySelector('svg'));
   const ticksOf = card => Array.from(card.querySelectorAll('text.group-label')).map(t => t.textContent);
   const sweeps = leaves.map(ticksOf).map(t => t.join(','));
-  ok(sweeps.indexOf('1024,512,256,128') !== -1, 'a full cache-line sweep in order', sweeps[0] + ' | ' + sweeps[1]);
-  ok(sweeps.indexOf('512,256,128') !== -1, 'and the 2080 sweep without its missing 1024', sweeps.filter(x => x === '512,256,128').length + ' facets');
+  ok(sweeps.indexOf('1024,512,256,128') !== -1, 'a full size sweep in order', sweeps[0] + ' | ' + sweeps[1]);
+  ok(sweeps.indexOf('512,256,128') !== -1, 'and the dev1 sweep without its missing 1024', sweeps.filter(x => x === '512,256,128').length + ' facets');
   ok(anomalies(d).length === 0, 'no anomalies');
   w.close();
 }
@@ -103,13 +103,13 @@ console.log('\n=== 3. Second y-axis is opt-in and only offered where it applies 
   ok(!toggle(w, d, 'second y-axis'), 'not offered with a single metric');
 
   const b = boot();
-  add(b.d, 'L2 hit rate');
+  add(b.d, 'Rate B');
   ok(!Array.from(b.d.querySelectorAll('#plots .head-toggle')).some(l => /second y-axis/.test(l.textContent)),
      'not offered when both metrics share a scale');
   b.w.close();
 
   const c = boot();
-  add(c.d, 'L1 access count');
+  add(c.d, 'Count A');
   ok(c.d.querySelectorAll('#plots .metric-panel').length === 2, 'mixed scales default to panels');
   ok(toggle(c.w, c.d, 'second y-axis'), 'offered once the scales differ');
   ok(c.d.querySelectorAll('#plots .metric-panel').length === 0, 'switching it on replaces the panels');
@@ -120,7 +120,7 @@ console.log('\n=== 3. Second y-axis is opt-in and only offered where it applies 
 console.log('\n=== 4. What the dual-axis chart actually draws ===');
 {
   const { w, d } = boot();
-  add(d, 'L1 access count');
+  add(d, 'Count A');
   toggle(w, d, 'second y-axis');
   const right = Array.from(d.querySelectorAll('#plots text.axis-right')).map(t => t.textContent);
   ok(right.length > 0, 'a right-hand axis is labelled', right.join(' '));
@@ -135,8 +135,8 @@ console.log('\n=== 4. What the dual-axis chart actually draws ===');
 
   const caps = Array.from(d.querySelectorAll('#plots .axis-legend .legend-cap')).map(c => c.textContent);
   ok(caps.length === 2, 'the legend splits into two labelled clusters', caps.join('  ||  '));
-  ok(/^Left axis/.test(caps[0]) && /hit rate %/.test(caps[0]), 'left cluster names its scale', caps[0]);
-  ok(/^Right axis/.test(caps[1]) && /access counts \(log\)/.test(caps[1]) && /dashed/.test(caps[1]),
+  ok(/^Left axis/.test(caps[0]) && /rate %/.test(caps[0]), 'left cluster names its scale', caps[0]);
+  ok(/^Right axis/.test(caps[1]) && /counts \(log\)/.test(caps[1]) && /dashed/.test(caps[1]),
      'right cluster names its scale and mark style', caps[1]);
   const groups = d.querySelectorAll('#plots .axis-legend .legend-group');
   ok(groups.length === 2 && groups[1].classList.contains('right'),
@@ -153,7 +153,7 @@ console.log('\n=== 5. Dual axis with a line chart, and moving Metric now matters
 {
   const { w, d } = boot();
   setType(w, d, 'lines');
-  add(d, 'L1 access count');
+  add(d, 'Count A');
   toggle(w, d, 'second y-axis');
   ok(d.querySelectorAll('#plots rect.bar').length === 0, 'no bars when the chart type is lines');
   const solid = Array.from(d.querySelectorAll('#plots polyline.series-line')).filter(p => !p.getAttribute('stroke-dasharray'));
@@ -173,17 +173,17 @@ console.log('\n=== 6. Persistence ===');
 {
   const { w, d } = boot();
   setType(w, d, 'lines');
-  add(d, 'L1 access count');
+  add(d, 'Count A');
   toggle(w, d, 'second y-axis');
   setTimeout(() => {
-    const raw = w.localStorage.getItem('cache-explorer-builder-autosave-v1');
+    const raw = w.localStorage.getItem('viz-builder-autosave-v1');
     const saved = JSON.parse(raw);
     ok(saved[0].chartType === 'lines' && saved[0].dualAxis === true, 'line type and dual axis saved',
        saved[0].chartType + '/' + saved[0].dualAxis);
     w.close();
     const dom2 = new JSDOM(HTML, {
       runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true, url: 'https://example.com/',
-      beforeParse(win) { win.localStorage.setItem('cache-explorer-builder-autosave-v1', raw); },
+      beforeParse(win) { win.localStorage.setItem('viz-builder-autosave-v1', raw); },
     });
     const d2 = dom2.window.document;
     d2.querySelector('.mode-tab[data-mode="builder"]').click();

@@ -30,7 +30,7 @@ console.log('\n=== 1. The unicode that broke pdflatex is gone ===');
 {
   const { w, d } = boot();
   setType(w, d, 'table');
-  add(d, 'Δ L1 (TAPAS−KbK)');
+  add(d, 'Δ Rate A (Tuned−Base)');
   setZone(w, d, 'metric', 'x');
   ok(d.querySelectorAll('#plots .plot-table td.repeat').length > 0, 'the table does contain ditto marks');
   Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'Export TikZ').click();
@@ -48,7 +48,7 @@ console.log('\n=== 2. Every chart type exports pure ASCII ===');
 {
   for (const t of ['bars', 'lines', 'diverging', 'matrix', 'table']) {
     const { w, d } = boot();
-    if (t === 'diverging') { rm(d, 'L1 hit rate'); add(d, 'Δ L1 accesses (TAPAS vs KbK)'); }
+    if (t === 'diverging') { rm(d, 'Rate A'); add(d, 'Δ Count A (Tuned vs Base)'); }
     setType(w, d, t);
     Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'Export TikZ').click();
     const parts = exportParts(d);
@@ -77,7 +77,7 @@ console.log('\n=== 4. pgfplots + CSV is offered alongside the standalone TikZ ==
   const { w, d } = boot();
   setType(w, d, 'lines');
   setZone(w, d, 'app', 'facet');
-  setZone(w, d, 'gpu', 'facet');
+  setZone(w, d, 'device', 'facet');
   d.querySelector('#plots .leaf-tools button').click();
   const parts = exportParts(d);
   const names = Object.keys(parts);
@@ -91,7 +91,7 @@ console.log('\n=== 4. pgfplots + CSV is offered alongside the standalone TikZ ==
   ok(new RegExp('\\{' + names.find(n => /\.csv$/.test(n)).replace('.', '\\.') + '\\}').test(pgf),
      'and the name matches the file actually offered');
   ok((pgf.match(/\\addplot table /g) || []).length === 3, 'one addplot per series', (pgf.match(/\\addplot table /g) || []).length);
-  ok(/\\addlegendentry\{KbK\}/.test(pgf), 'with legend entries');
+  ok(/\\addlegendentry\{Base\}/.test(pgf), 'with legend entries');
   ok(/xticklabels from table=/.test(pgf), 'tick labels come from the data, not hardcoded');
 
   const lines = csv.trim().split('\n');
@@ -102,7 +102,7 @@ console.log('\n=== 4. pgfplots + CSV is offered alongside the standalone TikZ ==
   // check the value against the page's own data rather than a baked-in number,
   // so the assertion survives a regenerated fixture
   const DATA = JSON.parse(d.querySelector('script[type="application/json"]').textContent);
-  const expect = DATA['32x32'].data.HarrisCorner['2080_512'].L1.base;
+  const expect = DATA['setA'].data.alpha['dev1_512'].rateA.base;
   ok(Math.abs(parseFloat(cells[3]) - expect) < 0.01, 'and the real value', cells[3] + ' vs ' + expect);
   w.close();
 }
@@ -112,7 +112,7 @@ console.log('\n=== 5. The pgfplots column indices actually line up ===');
   const { w, d } = boot();
   setType(w, d, 'lines');
   setZone(w, d, 'app', 'facet');
-  setZone(w, d, 'gpu', 'facet');
+  setZone(w, d, 'device', 'facet');
   d.querySelector('#plots .leaf-tools button').click();
   const parts = exportParts(d);
   const pgf = parts[Object.keys(parts).find(n => /-pgfplots\.tex$/.test(n))];
@@ -130,18 +130,18 @@ console.log('\n=== 5. The pgfplots column indices actually line up ===');
 console.log('\n=== 6. Log scale and zero line are carried over ===');
 {
   const { w, d } = boot();
-  rm(d, 'L1 hit rate'); add(d, 'L1 access count');
-  setZone(w, d, 'app', 'facet'); setZone(w, d, 'gpu', 'facet');
+  rm(d, 'Rate A'); add(d, 'Count A');
+  setZone(w, d, 'app', 'facet'); setZone(w, d, 'device', 'facet');
   d.querySelector('#plots .leaf-tools button').click();
   let parts = exportParts(d);
   let pgf = parts[Object.keys(parts).find(n => /-pgfplots\.tex$/.test(n))];
   ok(/ymode=log/.test(pgf), 'an access-count axis is logarithmic');
-  ok(/ylabel=\{access counts \(log\)\}/.test(pgf), 'and labelled as such', (/ylabel=\{[^}]*\}/.exec(pgf) || [])[0]);
+  ok(/ylabel=\{counts \(log\)\}/.test(pgf), 'and labelled as such', (/ylabel=\{[^}]*\}/.exec(pgf) || [])[0]);
   w.close();
 
   const b = boot();
-  rm(b.d, 'L1 hit rate'); add(b.d, 'Δ L1 (TAPAS−KbK)');
-  setZone(b.w, b.d, 'app', 'facet'); setZone(b.w, b.d, 'gpu', 'facet');
+  rm(b.d, 'Rate A'); add(b.d, 'Δ Rate A (Tuned−Base)');
+  setZone(b.w, b.d, 'app', 'facet'); setZone(b.w, b.d, 'device', 'facet');
   b.d.querySelector('#plots .leaf-tools button').click();
   pgf = exportParts(b.d)[Object.keys(exportParts(b.d)).find(n => /-pgfplots\.tex$/.test(n))];
   ok(/extra y ticks=\{0\}/.test(pgf), 'a delta axis gets an explicit zero line');
@@ -151,7 +151,7 @@ console.log('\n=== 6. Log scale and zero line are carried over ===');
 console.log('\n=== 7. Several charts, several csv files ===');
 {
   const { w, d } = boot();
-  setZone(w, d, 'gpu', 'facet');
+  setZone(w, d, 'device', 'facet');
   Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'Export TikZ').click();
   const parts = exportParts(d);
   const csvs = Object.keys(parts).filter(n => /\.csv$/.test(n));
@@ -193,8 +193,8 @@ console.log('\n=== 9. Figures report how far over the page they are ===');
   w.close();
 
   const b = boot();
-  ['app', 'gpu'].forEach(k => setZone(b.w, b.d, k, 'facet'));
-  ['Application', 'GPU'].forEach(lab => {
+  ['app', 'device'].forEach(k => setZone(b.w, b.d, k, 'facet'));
+  ['Application', 'Device'].forEach(lab => {
     const blk = Array.from(b.d.querySelectorAll('#plots .dim-block'))
       .find(x => x.querySelector('.dim-label').textContent.trim().indexOf(lab) === 0);
     Array.from(blk.querySelectorAll('.dual-col')[0].querySelectorAll('.dnd-chip')).slice(1).forEach(c => c.click());

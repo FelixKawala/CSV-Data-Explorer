@@ -27,19 +27,19 @@ const zoneChips = d => Array.from(d.querySelectorAll('#plots .zone .zone-chip'))
 console.log('\n=== 1. Deltas are coloured by series, not just by sign ===');
 {
   const { w, d } = boot();
-  rmMetric(d, 'L1 hit rate');
-  addMetric(d, 'Δ L1 (TAPAS−KbK)');
+  rmMetric(d, 'Rate A');
+  addMetric(d, 'Δ Rate A (Tuned−Base)');
   const single = new Set(fills(d));
   ok(single.size <= 2 && Array.from(single).every(f => /div-(pos|neg)/.test(f)),
      'one delta metric still uses the improved/regressed colours', Array.from(single).join(' '));
   ok(legend(d).some(l => /improved/.test(l)), 'and the polarity legend', legend(d).join(' | '));
 
-  addMetric(d, 'Δ L2 (TAPAS−KbK)');
+  addMetric(d, 'Δ Rate B (Tuned−Base)');
   const multi = new Set(fills(d));
   ok(!Array.from(multi).some(f => /div-(pos|neg)/.test(f)), 'two delta metrics switch to series colours', Array.from(multi).join(' '));
   ok(multi.size === 2, 'exactly two distinct colours for two metrics', multi.size);
   const lg = legend(d);
-  ok(lg.some(l => /Δ L1/.test(l)) && lg.some(l => /Δ L2/.test(l)), 'legend names both delta metrics', lg.join(' | '));
+  ok(lg.some(l => /Δ Rate A/.test(l)) && lg.some(l => /Δ Rate B/.test(l)), 'legend names both delta metrics', lg.join(' | '));
   ok(lg.length === 2, 'the legend is just the two metrics; sign is read off the zero line', lg.join(' | '));
   const zero = d.querySelectorAll('#plots line.baseline');
   ok(zero.length > 0, 'a zero line is drawn for the negative values');
@@ -52,13 +52,13 @@ console.log('\n=== 1. Deltas are coloured by series, not just by sign ===');
 console.log('\n=== 2. Mixing a percentage with an access count just works ===');
 {
   const { w, d } = boot();
-  addMetric(d, 'L1 access count');
+  addMetric(d, 'Count A');
   const refusal = d.querySelector('#plots .plot-empty');
   ok(!refusal, 'no refusal message', refusal && refusal.textContent.slice(0, 60));
   const panels = d.querySelectorAll('#plots .metric-panel');
   ok(panels.length === 2, 'it falls back to two stacked panels automatically', panels.length);
   const titles = Array.from(panels).map(p => p.querySelector('.panel-name').textContent);
-  ok(titles.join(' + ') === 'L1 hit rate + L1 access count', 'each panel names its metric', titles.join(' + '));
+  ok(titles.join(' + ') === 'Rate A + Count A', 'each panel names its metric', titles.join(' + '));
   const note = Array.from(d.querySelectorAll('#plots .chart-note')).map(n => n.textContent);
   ok(note.some(t => /different scales/.test(t)), 'and explains why', note.join(' // ').slice(0, 120));
   const mchip = d.querySelector('#plots .zone-chip[data-dim="metric"]');
@@ -68,8 +68,8 @@ console.log('\n=== 2. Mixing a percentage with an access count just works ===');
   ok(d.querySelectorAll('#plots rect.bar').length > 100, 'bars actually render', d.querySelectorAll('#plots rect.bar').length);
 
   // removing the odd metric out restores the user's chosen zone
-  rmMetric(d, 'L1 access count');
-  addMetric(d, 'L2 hit rate');
+  rmMetric(d, 'Count A');
+  addMetric(d, 'Rate B');
   const mchip2 = d.querySelector('#plots .zone-chip[data-dim="metric"]');
   ok(mchip2.getAttribute('data-zone') === 'series', 'same-scale metrics go back to Series', mchip2.getAttribute('data-zone'));
   ok(d.querySelectorAll('#plots .metric-panel').length === 0, 'and back to a single chart');
@@ -80,9 +80,9 @@ console.log('\n=== 3. Mixed scales work from every starting zone ===');
 ['x', 'series', 'facet'].forEach(z => {
   const { w, d } = boot();
   setZone(w, d, 'app', 'facet'); // make sure a facet level is in play too
-  addMetric(d, 'L2 hit rate');
+  addMetric(d, 'Rate B');
   setZone(w, d, 'metric', z);
-  addMetric(d, 'L2 access count');
+  addMetric(d, 'Count B');
   const panels = d.querySelectorAll('#plots .metric-panel').length;
   ok(panels > 0 && d.querySelectorAll('#plots .plot-empty').length === 0,
      'starting from ' + z + ': renders as panels, no refusal', panels + ' panels');
@@ -94,23 +94,23 @@ console.log('\n=== 4. Abandoned drags no longer corrupt the lists ===');
   const { w, d } = boot();
   const mkDT = () => ({ data: {}, setData() {}, getData() { return ''; } });
   const fire = (el, type) => { const e = new w.Event(type, { bubbles: true, cancelable: true }); e.dataTransfer = mkDT(); el.dispatchEvent(e); };
-  const gpuShown = () => Array.from(block(d, 'GPU').querySelectorAll('.dual-col')[0].querySelectorAll('.dnd-chip')).map(c => c.textContent).join(' ');
+  const gpuShown = () => Array.from(block(d, 'Device').querySelectorAll('.dual-col')[0].querySelectorAll('.dnd-chip')).map(c => c.textContent).join(' ');
   const before = gpuShown(), zonesBefore = zoneChips(d);
 
   // abandon a value drag, then drop a zone chip on the value list
-  fire(block(d, 'GPU').querySelectorAll('.dual-col')[0].querySelector('.dnd-chip'), 'dragstart');
-  fire(block(d, 'GPU').querySelectorAll('.dual-col')[0].querySelector('.dnd-chip'), 'dragend');
-  const zoneChip = d.querySelector('#plots .zone[data-zone="x"] .zone-chip[data-dim="gpu"]');
+  fire(block(d, 'Device').querySelectorAll('.dual-col')[0].querySelector('.dnd-chip'), 'dragstart');
+  fire(block(d, 'Device').querySelectorAll('.dual-col')[0].querySelector('.dnd-chip'), 'dragend');
+  const zoneChip = d.querySelector('#plots .zone[data-zone="x"] .zone-chip[data-dim="device"]');
   fire(zoneChip, 'dragstart');
-  fire(block(d, 'GPU').querySelectorAll('.dual-col')[1].querySelector('.dual-col-body'), 'drop');
+  fire(block(d, 'Device').querySelectorAll('.dual-col')[1].querySelector('.dual-col-body'), 'drop');
   fire(zoneChip, 'dragend');
-  ok(gpuShown() === before, 'GPU values untouched by the unrelated drop', before + ' -> ' + gpuShown());
+  ok(gpuShown() === before, 'Device values untouched by the unrelated drop', before + ' -> ' + gpuShown());
   ok(zoneChips(d) === zonesBefore, 'zones untouched', zoneChips(d));
 
   // abandon a dim drag, then drop a value chip on a zone
   fire(d.querySelector('#plots .zone-chip[data-dim="app"]'), 'dragstart');
   fire(d.querySelector('#plots .zone-chip[data-dim="app"]'), 'dragend');
-  fire(block(d, 'GPU').querySelectorAll('.dual-col')[0].querySelector('.dnd-chip'), 'dragstart');
+  fire(block(d, 'Device').querySelectorAll('.dual-col')[0].querySelector('.dnd-chip'), 'dragstart');
   fire(d.querySelector('#plots .zone[data-zone="facet"]'), 'drop');
   ok(zoneChips(d) === zonesBefore, 'a value dropped on a zone does not move a dimension', zoneChips(d));
   w.close();
@@ -122,18 +122,18 @@ console.log('\n=== 5. Real drags still work ===');
   const dt = { data: {}, setData() {}, getData() { return ''; } };
   const fire = (el, type) => { const e = new w.Event(type, { bubbles: true, cancelable: true }); e.dataTransfer = dt; el.dispatchEvent(e); };
   // dimension: X-axis -> Facets
-  fire(d.querySelector('#plots .zone[data-zone="x"] .zone-chip[data-dim="gpu"]'), 'dragstart');
+  fire(d.querySelector('#plots .zone[data-zone="x"] .zone-chip[data-dim="device"]'), 'dragstart');
   fire(d.querySelector('#plots .zone[data-zone="facet"]'), 'drop');
   const facet = Array.from(d.querySelectorAll('#plots .zone[data-zone="facet"] .zone-chip')).map(c => c.getAttribute('data-dim'));
-  ok(facet.join(',') === 'dataset,gpu', 'dragging a dimension between zones works', facet.join(','));
+  ok(facet.join(',') === 'dataset,device', 'dragging a dimension between zones works', facet.join(','));
   ok(d.querySelectorAll('#plots .facet-card').length === 3, 'and the chart follows');
 
   // value: Shown -> Available
-  const gpuBlock = block(d, 'GPU');
+  const gpuBlock = block(d, 'Device');
   const chip0 = gpuBlock.querySelectorAll('.dual-col')[0].querySelector('.dnd-chip');
   fire(chip0, 'dragstart');
   fire(gpuBlock.querySelectorAll('.dual-col')[1].querySelector('.dual-col-body'), 'drop');
-  const shownNow = Array.from(block(d, 'GPU').querySelectorAll('.dual-col')[0].querySelectorAll('.dnd-chip')).map(c => c.textContent);
+  const shownNow = Array.from(block(d, 'Device').querySelectorAll('.dual-col')[0].querySelectorAll('.dnd-chip')).map(c => c.textContent);
   ok(shownNow.length === 2, 'dragging a value out of Shown works', shownNow.join(' '));
   ok(d.querySelectorAll('#plots .facet-card').length === 2, 'and the chart follows');
   w.close();

@@ -17,7 +17,7 @@
 //   2 datasets x 5 apps x 11 (device, size) combos x 3 variants
 //   - the first device has no 1024 size            -> pruned axis slots
 //   - the third variant exists for one app only    -> sparse series, gaps in lines
-//   - hit rates span 0..100, access counts ~2 decades, deltas both signs
+//   - rates span 0..100, counts ~2 decades, deltas both signs
 //
 // Phase 2 replaces the app's hardcoded dimension vocabulary with a data-driven
 // one; at that point this generator switches to neutral labels too.
@@ -41,28 +41,28 @@ const rnd = mulberry32(0x5EED);
 const between = (lo, hi) => lo + rnd() * (hi - lo);
 const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
 
-const DATASETS = ['32x32', 'defBlock'];
-const APPS = ['HarrisCorner', 'Hotspot', 'Pathfinder', 'Posterization', 'SobelLuma'];
-const DEVICES = ['2080', '4070', '5090'];
+const DATASETS = ['setA', 'setB'];
+const APPS = ['alpha', 'beta', 'gamma', 'kappa', 'omega'];
+const DEVICES = ['dev1', 'dev2', 'dev3'];
 const SIZES = ['1024', '512', '256', '128'];
-const VARIANTS = ['base', 'kbk', 'kbki'];
-const SPARSE_VARIANT = 'kbki';        // exists for one app only
-const SPARSE_VARIANT_APP = 'HarrisCorner';
-const NO_LARGEST_SIZE = '2080';       // this device has no 1024 config
+const VARIANTS = ['base', 'tuned', 'tunedAlt'];
+const SPARSE_VARIANT = 'tunedAlt';        // exists for one app only
+const SPARSE_VARIANT_APP = 'alpha';
+const NO_LARGEST_SIZE = 'dev1';       // this device has no 1024 config
 
 function combosFor() {
   const out = [];
-  for (const gpu of DEVICES) {
-    for (const threads of SIZES) {
-      if (gpu === NO_LARGEST_SIZE && threads === SIZES[0]) continue;
-      out.push({ gpu, threads, key: gpu + '_' + threads });
+  for (const device of DEVICES) {
+    for (const size of SIZES) {
+      if (device === NO_LARGEST_SIZE && size === SIZES[0]) continue;
+      out.push({ device, size, key: device + '_' + size });
     }
   }
   return out;
 }
 
-// A hit rate falls as the cache shrinks; access counts do not depend on the
-// cache size at L1. Reproducing that keeps log axes and delta signs realistic.
+// A rate falls as the size shrinks; counts do not depend on the
+// size at the first level. Reproducing that keeps log axes and delta signs realistic.
 function buildDataset() {
   const combos = combosFor();
   const data = {};
@@ -72,18 +72,18 @@ function buildDataset() {
     const l1Ceiling = between(20, 78);
     const l2Ceiling = between(12, 72);
     for (const combo of combos) {
-      const shrink = SIZES.indexOf(combo.threads) / (SIZES.length - 1); // 0 big .. 1 small
-      const point = { L1: {}, L2: {}, L1_access: {}, L2_access: {} };
+      const shrink = SIZES.indexOf(combo.size) / (SIZES.length - 1); // 0 big .. 1 small
+      const point = { rateA: {}, rateB: {}, countA: {}, countB: {} };
       for (const variant of VARIANTS) {
         if (variant === SPARSE_VARIANT && app !== SPARSE_VARIANT_APP) continue;
         const lift = variant === 'base' ? 0 : between(-14, 22);   // both signs
         const l1 = Math.max(0.4, Math.min(99, l1Ceiling * (1 - 0.75 * shrink) + lift));
         const l2 = Math.max(0.4, Math.min(99, l2Ceiling * (1 - 0.55 * shrink) + lift * 0.6));
         const l1a = l1AccessBase * (variant === 'base' ? 1 : between(0.55, 1.6));
-        point.L1[variant] = round(l1, 2);
-        point.L2[variant] = round(l2, 2);
-        point.L1_access[variant] = Math.round(l1a);
-        point.L2_access[variant] = Math.round(l1a * (1 - l1 / 100) * between(0.8, 1.25));
+        point.rateA[variant] = round(l1, 2);
+        point.rateB[variant] = round(l2, 2);
+        point.countA[variant] = Math.round(l1a);
+        point.countB[variant] = Math.round(l1a * (1 - l1 / 100) * between(0.8, 1.25));
       }
       perApp[combo.key] = point;
     }
@@ -99,15 +99,15 @@ for (const ds of DATASETS) bundle[ds] = buildDataset();
 // bundle and a CSV can describe the same thing
 function toTidyCsv(bundle) {
   const rows = [['dataset', 'app', 'device', 'size', 'variant',
-    'l1_hit_rate', 'l2_hit_rate', 'l1_accesses', 'l2_accesses'].join(',')];
+    'rate_a', 'rate_b', 'count_a', 'count_b'].join(',')];
   for (const [dsName, ds] of Object.entries(bundle)) {
     for (const app of ds.apps) {
       for (const combo of ds.combos) {
         const p = ds.data[app][combo.key];
         for (const variant of VARIANTS) {
-          if (p.L1[variant] === undefined) continue;
-          rows.push([dsName, app, combo.gpu, combo.threads, variant,
-            p.L1[variant], p.L2[variant], p.L1_access[variant], p.L2_access[variant]].join(','));
+          if (p.rateA[variant] === undefined) continue;
+          rows.push([dsName, app, combo.device, combo.size, variant,
+            p.rateA[variant], p.rateB[variant], p.countA[variant], p.countB[variant]].join(','));
         }
       }
     }
