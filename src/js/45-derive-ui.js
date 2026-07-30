@@ -1,0 +1,145 @@
+// define a comparison measure from the page
+//
+// A derived measure compares one measure between two values of one dimension:
+// "Rate A, Tuned versus Base". The model has supported that since the schema
+// became data (it is how the bundle's Δ measures are built); this is the form
+// that lets a user declare one for an imported CSV, where nothing is hardcoded.
+
+const DERIVE_OPS = [
+  { key: 'diff', label: 'difference (a − b)', format: 'delta' },
+  { key: 'reldiff', label: 'relative change ((a − b) / b)', format: 'reldelta' },
+  { key: 'ratio', label: 'ratio (a / b)', format: 'number' },
+];
+
+let deriveOpen = false;
+
+function derivedMeasureLabel(op, baseLabel, aLabel, bLabel) {
+  if (op === 'ratio') return baseLabel + ' (' + aLabel + ' / ' + bLabel + ')';
+  const sign = op === 'reldiff' ? ' vs ' : ' − ';
+  return 'Δ ' + baseLabel + ' (' + aLabel + sign + bLabel + ')';
+}
+
+// A comparison only makes sense over a dimension with at least two values, and
+// only for a measure that is not itself a comparison.
+function derivableMeasures() { return METRICS.filter(m => !m.derived); }
+function comparableDims() {
+  return DS ? DS.dims.filter(d => d.values.length >= 2) : [];
+}
+
+function addDerivedMeasure(spec) {
+  const base = METRIC_BY_KEY[spec.base];
+  const dim = DIM_BY_KEY[spec.over];
+  if (!base || !dim) return null;
+  const opDef = DERIVE_OPS.find(o => o.key === spec.op) || DERIVE_OPS[0];
+  const label = spec.label || derivedMeasureLabel(
+    spec.op, base.label, dim.labelFor(spec.a), dim.labelFor(spec.b));
+  const key = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const measure = {
+    key,
+    label,
+    format: makeFormat(opDef.format),
+    derived: { op: spec.op, base: spec.base, over: spec.over, a: spec.a, b: spec.b },
+  };
+  // Add to the live dataset, then rebuild the schema so the new measure appears
+  // in "Data shown" everywhere. Plots keep their configuration.
+  DS.measures.push(measure);
+  DS.measureByKey[key] = measure;
+  useDataset(DS);
+  plots.forEach(p => {
+    if (!p.included[MEASURE_DIM]) p.included[MEASURE_DIM] = [];
+  });
+  return measure;
+}
+
+// `initial` carries the choices forward when changing the compared dimension
+// forces a re-render; without it the form would silently reset to the first one.
+function renderDeriveForm(host, initial) {
+  host.innerHTML = '';
+  const box = html('div', 'derive-form', host);
+  const measures = derivableMeasures();
+  const dims = comparableDims();
+  if (!measures.length || !dims.length) {
+    html('div', 'import-note', box).textContent =
+      'A comparison needs a measure and a dimension with at least two values.';
+    return;
+  }
+
+  const state = Object.assign({ op: 'diff', base: measures[0].key, over: dims[0].key }, initial || {});
+  if (!DIM_BY_KEY[state.over] || DIM_BY_KEY[state.over].values.length < 2) state.over = dims[0].key;
+  if (!METRIC_BY_KEY[state.base] || METRIC_BY_KEY[state.base].derived) state.base = measures[0].key;
+  const overValues = DIM_BY_KEY[state.over].values;
+  if (overValues.indexOf(state.a) === -1) state.a = overValues[0];
+  if (overValues.indexOf(state.b) === -1 || state.b === state.a) {
+    state.b = overValues.find(v => v !== state.a);
+  }
+
+  const row = (labelText) => {
+    const l = html('label', 'radio-row', box);
+    html('span', 'derive-label', l).textContent = labelText;
+    return l;
+  };
+  const select = (parent, options, value, onChange) => {
+    const sel = document.createElement('select');
+    options.forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o.value; opt.textContent = o.label;
+      sel.appendChild(opt);
+    });
+    sel.value = value;
+    sel.addEventListener('change', () => { onChange(sel.value); });
+    parent.appendChild(sel);
+    return sel;
+  };
+
+  const preview = html('div', 'derive-preview', null);
+  const refresh = () => {
+    const base = METRIC_BY_KEY[state.base];
+    const dim = DIM_BY_KEY[state.over];
+    preview.textContent = derivedMeasureLabel(state.op, base.label,
+      dim.labelFor(state.a), dim.labelFor(state.b));
+  };
+
+  const r1 = row('Compare');
+  select(r1, measures.map(m => ({ value: m.key, label: m.label })), state.base,
+    v => { state.base = v; refresh(); });
+
+  const r2 = row('across');
+  const dimSel = select(r2, dims.map(d => ({ value: d.key, label: d.label })), state.over, v => {
+    // the value pickers below depend on this, so rebuild carrying the rest across
+    renderDeriveForm(host, { op: state.op, base: state.base, over: v });
+  });
+  dimSel.setAttribute('data-role', 'over');
+
+  const r3 = row('taking');
+  const aSel = select(r3, DIM_BY_KEY[state.over].values.map(v => ({ value: v, label: dimValueLabel(state.over, v) })),
+    state.a, v => { state.a = v; refresh(); });
+  aSel.setAttribute('data-role', 'a');
+  html('span', 'derive-label', r3).textContent = 'against';
+  const bSel = select(r3, DIM_BY_KEY[state.over].values.map(v => ({ value: v, label: dimValueLabel(state.over, v) })),
+    state.b, v => { state.b = v; refresh(); });
+  bSel.setAttribute('data-role', 'b');
+
+  const r4 = row('as');
+  select(r4, DERIVE_OPS.map(o => ({ value: o.key, label: o.label })), state.op,
+    v => { state.op = v; refresh(); });
+
+  refresh();
+  box.appendChild(preview);
+
+  const acts = html('div', 'import-actions', box);
+  const add = document.createElement('button');
+  add.type = 'button'; add.className = 'btn primary'; add.textContent = 'Add measure';
+  add.addEventListener('click', () => {
+    if (state.a === state.b) { setStatus('Pick two different values to compare.', false); return; }
+    const m = addDerivedMeasure(state);
+    if (!m) return;
+    deriveOpen = false;
+    renderBuilder();
+    setStatus('Added "' + m.label + '" — it is now in every plot\'s Data shown list.', false);
+  });
+  acts.appendChild(add);
+  const cancel = document.createElement('button');
+  cancel.type = 'button'; cancel.className = 'btn small'; cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', () => { deriveOpen = false; renderBuilder(); });
+  acts.appendChild(cancel);
+}

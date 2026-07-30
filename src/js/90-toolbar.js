@@ -29,6 +29,32 @@ function renderBuilderToolbar() {
   const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.className = 'btn primary'; addBtn.textContent = '+ Add plot';
   addBtn.addEventListener('click', () => { plots.push(makeDefaultPlot()); renderPlots(); });
   bar.appendChild(addBtn);
+
+  // Layout presets. These replace the old Simple mode, whose three group-by modes
+  // were 383 lines of a second, hardwired renderer; each is now one zone layout.
+  const presets = layoutPresets();
+  if (presets.length) {
+    const wrap = html('span', 'preset-group', bar);
+    html('span', 'preset-label', wrap).textContent = 'Layout';
+    presets.forEach(p => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn small'; b.textContent = p.label;
+      b.title = p.hint;
+      b.addEventListener('click', () => {
+        const plot = plots[0] || makeDefaultPlot();
+        if (!plots.length) plots.push(plot);
+        plot.zones = p.zones();
+        Object.keys(plot.included).forEach(k => {
+          if (k === MEASURE_DIM) return;
+          const facet = plot.zones.facet.indexOf(k) !== -1;
+          plot.included[k] = facet ? DIM_BY_KEY[k].values.slice(0, 1) : DIM_BY_KEY[k].values.slice();
+        });
+        renderPlots();
+        setStatus(p.label + ' layout applied to plot 1', false);
+      });
+      wrap.appendChild(b);
+    });
+  }
   bar.appendChild(sep());
 
   const nameInput = document.createElement('input'); nameInput.type = 'text'; nameInput.className = 'name-input'; nameInput.placeholder = 'View name';
@@ -118,8 +144,20 @@ function renderBuilderToolbar() {
   importLabel.appendChild(importInput);
   bar.appendChild(importLabel);
 
+  const deriveBtn = document.createElement('button');
+  deriveBtn.type = 'button'; deriveBtn.className = 'btn small'; deriveBtn.id = 'derive-toggle';
+  deriveBtn.textContent = deriveOpen ? 'Close comparison' : '+ Comparison measure';
+  deriveBtn.title = 'Define a measure that compares another one across two values of a dimension';
+  deriveBtn.addEventListener('click', () => { deriveOpen = !deriveOpen; renderBuilder(); });
+  bar.appendChild(deriveBtn);
+
   const status = html('div', 'builder-status', bar);
   status.id = 'builder-status';
+
+  if (deriveOpen) {
+    const holder = html('div', 'derive-holder', bar);
+    renderDeriveForm(holder);
+  }
 
   refreshSavedViewsSelect();
 }

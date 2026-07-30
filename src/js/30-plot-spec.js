@@ -88,3 +88,33 @@ let plots = [];
 // A default layout can only be chosen once the dimensions are known, so plots are
 // (re)built when a dataset is adopted rather than at load.
 function resetPlots() { plots = hasDataset() ? [makeDefaultPlot()] : []; }
+
+// Named zone layouts, offered in the toolbar. Derived from whatever dimensions
+// exist rather than hardcoded, so they mean something for an imported CSV too.
+function layoutPresets() {
+  const g = GROUPABLE_KEYS.slice();
+  if (g.length < 2) return [];
+  const first = g[0];
+  const last = g[g.length - 1];
+  const middle = g.slice(1, -1);
+  const out = [
+    {
+      label: 'Nested',
+      hint: 'every dimension but the last shares one x-axis, nested left to right',
+      zones: () => ({ x: g.slice(0, -1), series: [last], facet: [] }),
+    },
+    {
+      label: 'Faceted',
+      hint: 'one chart per value of the first dimension',
+      zones: () => ({ x: middle.length ? middle : [last], series: middle.length ? [last] : [], facet: [first] }),
+    },
+  ];
+  if (g.length >= 3) {
+    out.push({
+      label: 'Side by side',
+      hint: 'the innermost dimension on the x-axis, the outermost as the series colour',
+      zones: () => ({ x: g.slice(1), series: [first], facet: [] }),
+    });
+  }
+  return out;
+}

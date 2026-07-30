@@ -18,6 +18,7 @@
 //   2 datasets x 5 apps x 11 (device, size) combos x 3 variants
 //   - the first device has no 1024 size            -> pruned axis slots
 //   - the third variant exists for one app only    -> sparse series, gaps in lines
+//   - each device shifts the curve                 -> facets differ, comparisons non-zero
 //   - rates span 0..100, counts ~2 decades, deltas both signs
 //
 // Phase 2 replaces the app's hardcoded dimension vocabulary with a data-driven
@@ -72,14 +73,20 @@ function buildDataset() {
     const l1AccessBase = between(3e5, 9e6);          // constant across sizes
     const l1Ceiling = between(20, 78);
     const l2Ceiling = between(12, 72);
+    // Each device shifts the whole curve a little. Without this the rates depended
+    // only on size, so every device facet was an identical chart and a comparison
+    // across devices was exactly zero -- which quietly made such tests vacuous.
+    const deviceShift = {};
+    DEVICES.forEach(dv => { deviceShift[dv] = between(-9, 9); });
     for (const combo of combos) {
       const shrink = SIZES.indexOf(combo.size) / (SIZES.length - 1); // 0 big .. 1 small
       const point = { rateA: {}, rateB: {}, countA: {}, countB: {} };
       for (const variant of VARIANTS) {
         if (variant === SPARSE_VARIANT && app !== SPARSE_VARIANT_APP) continue;
         const lift = variant === 'base' ? 0 : between(-14, 22);   // both signs
-        const l1 = Math.max(0.4, Math.min(99, l1Ceiling * (1 - 0.75 * shrink) + lift));
-        const l2 = Math.max(0.4, Math.min(99, l2Ceiling * (1 - 0.55 * shrink) + lift * 0.6));
+        const dv = deviceShift[combo.device];
+        const l1 = Math.max(0.4, Math.min(99, l1Ceiling * (1 - 0.75 * shrink) + lift + dv));
+        const l2 = Math.max(0.4, Math.min(99, l2Ceiling * (1 - 0.55 * shrink) + lift * 0.6 + dv * 0.7));
         const l1a = l1AccessBase * (variant === 'base' ? 1 : between(0.55, 1.6));
         point.rateA[variant] = round(l1, 2);
         point.rateB[variant] = round(l2, 2);
