@@ -1,7 +1,7 @@
 const fs = require('fs');
 const { JSDOM } = require('jsdom');
 
-const HTML = fs.readFileSync(__dirname + '/cache_explorer.html', 'utf8');
+const HTML = fs.readFileSync(__dirname + '/../dist/fixture.html', 'utf8');
 let failures = 0;
 function ok(cond, msg, extra) {
   if (!cond) { failures++; console.log('  FAIL: ' + msg + (extra !== undefined ? '  [' + extra + ']' : '')); }

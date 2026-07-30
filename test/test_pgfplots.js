@@ -1,6 +1,6 @@
 const fs = require('fs');
 const { JSDOM } = require('jsdom');
-const HTML = fs.readFileSync(__dirname + '/cache_explorer.html', 'utf8');
+const HTML = fs.readFileSync(__dirname + '/../dist/fixture.html', 'utf8');
 
 let failures = 0;
 function ok(c, m, e) {
@@ -99,7 +99,11 @@ console.log('\n=== 4. pgfplots + CSV is offered alongside the standalone TikZ ==
   ok(lines.length === 4, 'a row per x position', lines.length - 1 + ' rows');
   const cells = lines[1].split(',');
   ok(cells[0] === '0' && cells[1] === '512', 'index and label first', cells.slice(0, 2).join(','));
-  ok(Math.abs(parseFloat(cells[3]) - 62.13) < 0.01, 'and the real value', cells[3]);
+  // check the value against the page's own data rather than a baked-in number,
+  // so the assertion survives a regenerated fixture
+  const DATA = JSON.parse(d.querySelector('script[type="application/json"]').textContent);
+  const expect = DATA['32x32'].data.HarrisCorner['2080_512'].L1.base;
+  ok(Math.abs(parseFloat(cells[3]) - expect) < 0.01, 'and the real value', cells[3] + ' vs ' + expect);
   w.close();
 }
 
