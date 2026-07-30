@@ -103,11 +103,13 @@ function makeDataset(spec) {
     }
   }
 
+  let filled = 0;
   measures.forEach(m => {
     if (m.derived) return;
     const out = vals[m.key];
     for (let r = 0; r < nRows; r++) {
       if (!hits[m.key][r]) continue;
+      filled++;
       out[r] = m.agg === 'sum' ? sums[m.key][r]
         : m.agg === 'first' ? sums[m.key][r] / hits[m.key][r]   // first == mean when unique
         : sums[m.key][r] / hits[m.key][r];
@@ -118,7 +120,7 @@ function makeDataset(spec) {
     name: spec.name || 'dataset',
     dims, measures, measureByKey, strides, index, codes, vals,
     nRows, cells,
-    stats: { rows: rows.length, collapsed, density: cells ? nRows / cells : 0 },
+    stats: { rows: rows.length, collapsed, filled, density: cells ? nRows / cells : 0 },
   };
 }
 

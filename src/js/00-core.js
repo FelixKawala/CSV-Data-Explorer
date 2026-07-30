@@ -7,7 +7,7 @@ const DATA = (function () {
   const text = node ? node.textContent.trim() : '';
   if (text && text.slice(0, 2) !== '__') return JSON.parse(text);
   if (window.__VIZ_DATASET__) return window.__VIZ_DATASET__;
-  throw new Error('no dataset: run `npm run build`, or `npm run fixture` for src/index.html');
+  return null;        // no data yet: the Data tab shows its empty state
 })();
 const tooltip = document.getElementById('tooltip');
 const SVGNS = 'http://www.w3.org/2000/svg';

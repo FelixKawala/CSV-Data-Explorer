@@ -41,7 +41,7 @@ function migrateZones(p) {
   if (missing.length) out.facet = missing.concat(out.facet);
   if (out.x.length === 0 && out.series.length === 0 && out.facet.length === GROUPABLE_KEYS.length
       && !(p && (p.zones || p.groupOrder))) {
-    return { x: ['device', 'size', 'app'], series: ['variant'], facet: ['dataset'] };
+    return defaultZones();
   }
   return out;
 }

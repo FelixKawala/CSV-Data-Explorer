@@ -76,9 +76,9 @@ function datasetSpecFromBundle(bundle) {
     name: 'bundle',
     dims: [
       { key: 'dataset', label: 'Dataset', values: datasetKeys },
-      { key: 'app', label: 'Application', values: apps },
       { key: 'device', label: 'Device', values: devices },
       { key: 'size', label: 'Size', values: sizes },
+      { key: 'app', label: 'Application', values: apps },
       { key: 'variant', label: 'Variant', values: VARIANTS.slice(), labelOverride: VARIANT_LABEL },
     ],
     measures: RAW_MEASURES.concat(DERIVED_MEASURES),
@@ -86,34 +86,52 @@ function datasetSpecFromBundle(bundle) {
   };
 }
 
-const DS = makeDataset(datasetSpecFromBundle(DATA));
+// ---- the live schema -------------------------------------------------------
+// These were const, built once from the embedded bundle. They are rebound when a
+// dataset is imported or switched, so every consumer reads them at call time.
+let DS = null;
+let METRICS = [];
+let METRIC_BY_KEY = {};
+let DIMENSIONS = [];
+let DIM_BY_KEY = {};
+let DIM_KEYS = [];
+let GROUPABLE_KEYS = [];
 
-// ---- what the rest of the app consumes -------------------------------------
-const METRICS = DS.measures;
-const METRIC_BY_KEY = DS.measureByKey;
+const SEP = ' \u00b7 '; // joins the parts of a composite (multi-dimension) axis label
 
-// The measure selector is a dimension everywhere in the UI; it just picks a
-// column instead of filtering rows. It sits where it always sat in the order,
-// because the flat table dump prints dimensions in this sequence.
-const MEASURE_PSEUDO_DIM = {
-  key: MEASURE_DIM,
-  label: 'Metric',
-  values: METRICS.map(m => m.key),
-  labelFor: v => (METRIC_BY_KEY[v] ? METRIC_BY_KEY[v].label : v),
-};
-const DIMENSIONS = DS.dims.slice(0, 4).concat([MEASURE_PSEUDO_DIM], DS.dims.slice(4));
-const DIM_BY_KEY = {};
-DIMENSIONS.forEach(d => { DIM_BY_KEY[d.key] = d; });
-const DIM_KEYS = DIMENSIONS.map(d => d.key);
+function useDataset(ds) {
+  DS = ds;
+  METRICS = ds ? ds.measures : [];
+  METRIC_BY_KEY = ds ? ds.measureByKey : {};
+  // The measure selector is a dimension everywhere in the UI; it just picks a
+  // column instead of filtering rows. It sits fifth because the flat table dump
+  // prints dimensions in this order.
+  const pseudo = {
+    key: MEASURE_DIM,
+    label: 'Metric',
+    values: METRICS.map(m => m.key),
+    labelFor: v => (METRIC_BY_KEY[v] ? METRIC_BY_KEY[v].label : v),
+  };
+  const dims = ds ? ds.dims : [];
+  const at = Math.min(4, dims.length);
+  DIMENSIONS = dims.slice(0, at).concat([pseudo], dims.slice(at));
+  DIM_BY_KEY = {};
+  DIMENSIONS.forEach(d => { DIM_BY_KEY[d.key] = d; });
+  DIM_KEYS = DIMENSIONS.map(d => d.key);
+  // Metric gets its own "data shown" selector; everything else can be dragged
+  // between the grouping zones.
+  GROUPABLE_KEYS = DIM_KEYS.filter(k => k !== MEASURE_DIM);
+  return DS;
+}
 
-// Metric gets its own dedicated "data shown" selector; every other dimension --
-// Dataset included -- can be dragged between the grouping zones.
-const GROUPABLE_KEYS = DIM_KEYS.filter(k => k !== MEASURE_DIM);
+function hasDataset() { return !!DS && DS.dims.length > 0; }
 
-const SEP = ' · '; // joins the parts of a composite (multi-dimension) axis label
-function dimValueLabel(dimKey, value) { return DIM_BY_KEY[dimKey].labelFor(value); }
+function dimValueLabel(dimKey, value) {
+  const d = DIM_BY_KEY[dimKey];
+  return d ? d.labelFor(value) : String(value);
+}
 
-function metricValueAt(ctx) { return datasetValueAt(DS, ctx); }
+function metricValueAt(ctx) { return DS ? datasetValueAt(DS, ctx) : null; }
 function metricIgnoresDim(metricKey, dimKey) {
   return measureIgnoresDim(METRIC_BY_KEY[metricKey], dimKey);
 }

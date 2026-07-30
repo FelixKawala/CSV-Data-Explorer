@@ -243,13 +243,14 @@ console.log('\n=== 10. Migration from the old groupOrder format ===');
   window.close();
 }
 
-console.log('\n=== 11. Simple mode regression ===');
+console.log('\n=== 11. The Data tab ===');
 {
   const dom = new JSDOM(HTML, { runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true, url: 'https://example.com/' });
   const doc = dom.window.document;
-  const bars = doc.querySelectorAll('#simple-view rect.bar').length;
-  ok(bars > 0, 'simple mode still renders', bars);
-  ok(scanAnomalies(doc).length === 0, 'simple mode clean');
+  doc.querySelector('.mode-tab[data-mode="data"]').click();
+  ok(!doc.getElementById('data-view').classList.contains('hidden'), 'the Data tab opens');
+  ok(!!doc.querySelector('#csv-input'), 'and offers a CSV import');
+  ok(!doc.querySelector('.viz-root').classList.contains('wide'), 'in the narrow reading column');
   dom.window.close();
 }
 

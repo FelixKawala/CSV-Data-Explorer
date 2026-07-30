@@ -71,11 +71,11 @@ console.log('\n=== B. Access delta values are correct ===');
     Array.from(tr.querySelectorAll('td')).map(td => td.textContent));
   ok(rows.length > 0, 'table rows produced', rows.length);
   const DATA = JSON.parse(doc.querySelector('script[type="application/json"]').textContent);
-  // columns: dataset, app, device, size, metric, variant, value
-  const r = rows.find(row => row[6] !== '—' && DATA[row[0]].combos.some(c => c.device === row[2] && c.size === row[3]));
+  // columns follow the dataset's dimension order: dataset, device, size, app, metric, variant, value
+  const r = rows.find(row => row[6] !== '—' && DATA[row[0]].combos.some(c => c.device === row[1] && c.size === row[2]));
   ok(!!r, 'found a row with real data', r && r.join('/'));
-  const combo = DATA[r[0]].combos.find(c => c.device === r[2] && c.size === r[3]);
-  const pt = DATA[r[0]].data[r[1]][combo.key].countA;
+  const combo = DATA[r[0]].combos.find(c => c.device === r[1] && c.size === r[2]);
+  const pt = DATA[r[0]].data[r[3]][combo.key].countA;
   const expect = ((pt.tuned - pt.base) / pt.base) * 100;
   const got = parseFloat(r[6]);
   ok(Math.abs(got - expect) < 0.05, 'first row matches (a-b)/b*100 from the raw data',

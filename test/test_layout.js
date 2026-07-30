@@ -25,11 +25,12 @@ console.log('\n=== F. Wide layout in Builder mode ===');
 {
   const { window, doc } = boot();
   const root = doc.querySelector('.viz-root');
-  ok(!root.classList.contains('wide'), 'Simple mode keeps the narrow reading column');
+  // with data embedded the page boots straight into the Builder, so it starts wide
+  ok(root.classList.contains('wide'), 'a page with data boots into the Builder, widened');
+  doc.querySelector('.mode-tab[data-mode="data"]').click();
+  ok(!root.classList.contains('wide'), 'the Data tab is a narrow reading column');
   toBuilder(doc);
-  ok(root.classList.contains('wide'), 'Builder mode widens the page to the window');
-  doc.querySelector('.mode-tab[data-mode="simple"]').click();
-  ok(!root.classList.contains('wide'), 'switching back restores the narrow column');
+  ok(root.classList.contains('wide'), 'and the Builder widens it again');
   window.close();
 }
 
