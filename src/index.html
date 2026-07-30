@@ -1,0 +1,106 @@
+<title>Data explorer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="styles/base.css" />
+<link rel="stylesheet" href="styles/charts.css" />
+<link rel="stylesheet" href="styles/ui.css" />
+
+<div class="viz-root">
+  <h1>Data explorer</h1>
+
+  <div class="mode-tabs" id="mode-tabs">
+    <button class="mode-tab" data-mode="simple" aria-pressed="true">Simple</button>
+    <button class="mode-tab" data-mode="builder" aria-pressed="false">Builder</button>
+  </div>
+
+  <div id="simple-view">
+  <p class="lede">
+    Toggle applications and data categories on or off to build your own view.
+    Group by <b>application</b> (one card per app, categories nested inside),
+    by <b>category</b> (one card per category, applications nested inside —
+    same metric lined up across applications), or by <b>Device + config</b>
+    (bars grouped by Device/size, one bar per case, so every case
+    sits right next to its peers — each bar carries its own app-code tick
+    label below it, in addition to the color and legend). Device and variant
+    filters scope every panel at once.
+  </p>
+
+  <div class="controls">
+    <div class="ctrl-row">
+      <span class="ctrl-label">Group by</span>
+      <div class="chip-group" id="ctl-groupby"></div>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Dataset</span>
+      <select id="ctl-dataset"></select>
+      <span class="ctrl-label" style="width:auto;">Device</span>
+      <div class="chip-group" id="ctl-device"></div>
+      <span class="ctrl-label" style="width:auto;">Variant</span>
+      <div class="chip-group" id="ctl-variant"></div>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Category</span>
+      <div class="chip-group" id="ctl-category"></div>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Application</span>
+      <div class="chip-group" id="ctl-app"></div>
+      <button class="chip-mini" id="app-all">All</button>
+      <button class="chip-mini" id="app-none">None</button>
+    </div>
+  </div>
+
+  <div class="legend" id="legend"></div>
+
+  <div class="toolbar">
+    <button class="table-toggle" id="table-toggle">Show as table</button>
+  </div>
+
+  <div id="main"></div>
+  <div id="table-wrap" class="table-wrap hidden"></div>
+
+  <p class="lede" style="margin-top:8px;">
+    Tuned-alt (interleaved) only exists for alpha (no interleaved-tiled run for other apps) —
+    toggling it off elsewhere has no effect. Access-count panels use a log scale
+    (counts span roughly 10<sup>5</sup>–10<sup>7</sup>).
+  </p>
+  </div>
+
+  <div id="builder-view" class="hidden">
+    <p class="lede">
+      Build your own set of plots. Each plot has a <b>grouping priority</b> —
+      drag dimensions to reorder; the bottom two become the chart's axes
+      (series/rows and x/columns), everything above becomes a nested facet
+      (dimensions left at a single value stay invisible filters). Each
+      dimension also gets its own <b>included values</b> list — drag between
+      "shown" and "available," or click ± — so one plot can show just rateA hit
+      rate while another shows Rate A and access count side by side.
+      Both datasets, all Devices, and sizes are available as
+      independent dimensions here.
+    </p>
+    <div class="builder-toolbar" id="builder-toolbar"></div>
+    <div id="plots"></div>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script id="dataset" type="application/json">__DATASET_JSON__</script>
+<!-- dev only: written by tools/make-fixture.mjs, stripped by tools/build.mjs -->
+<script src="dev-dataset.js"></script>
+<script src="js/00-core.js"></script>
+<script src="js/10-simple.js"></script>
+<script src="js/15-tabs.js"></script>
+<script src="js/20-schema.js"></script>
+<script src="js/30-plot-spec.js"></script>
+<script src="js/40-zones-ui.js"></script>
+<script src="js/50-plot-plan.js"></script>
+<script src="js/55-layout.js"></script>
+<script src="js/60-leaves.js"></script>
+<script src="js/65-plot-table.js"></script>
+<script src="js/70-export-tikz.js"></script>
+<script src="js/75-export-data.js"></script>
+<script src="js/78-export-ui.js"></script>
+<script src="js/80-plot-card.js"></script>
+<script src="js/85-persist.js"></script>
+<script src="js/90-toolbar.js"></script>
+<script src="js/99-init.js"></script>

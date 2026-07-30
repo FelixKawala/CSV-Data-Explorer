@@ -27,3 +27,6 @@ test/fixtures/
 # personal Claude Code settings
 .claude/settings.local.json
 .claude/worktrees/
+
+# dev shim written by tools/make-fixture.mjs
+src/dev-dataset.js

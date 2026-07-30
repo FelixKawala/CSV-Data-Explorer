@@ -11,6 +11,7 @@
 //   node tools/make-fixture.mjs
 //     -> test/fixtures/dataset.json   the bundle
 //     -> test/fixtures/demo.csv       the same data, tidy (Phase 3 import demo)
+//     -> src/dev-dataset.js           so src/index.html works unbuilt, from file://
 //     -> dist/fixture.html            the built page the suites read
 //
 // Shape reproduced deliberately:
@@ -120,6 +121,11 @@ const jsonPath = resolve(root, 'test/fixtures/dataset.json');
 const csvPath = resolve(root, 'test/fixtures/demo.csv');
 writeFileSync(jsonPath, JSON.stringify(bundle), 'utf8');
 writeFileSync(csvPath, toTidyCsv(bundle), 'utf8');
+
+// src/index.html cannot fetch its data over file://, so hand it a plain script.
+// Gitignored; the build strips the reference and embeds the data instead.
+writeFileSync(resolve(root, 'src/dev-dataset.js'),
+  'window.__VIZ_DATASET__ = ' + JSON.stringify(bundle) + ';\n', 'utf8');
 
 const cells = Object.values(bundle).reduce((n, ds) =>
   n + ds.apps.length * ds.combos.length, 0);

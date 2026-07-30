@@ -1,0 +1,139 @@
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --axis:           #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+
+    --series-base:    #2a78d6; /* blue    slot 1 */
+    --series-tuned:     #eb6834; /* orange  slot 2 */
+    --series-tuned-alt:    #1baf7a; /* aqua    slot 3 */
+    --app-4:          #eda100; /* yellow  slot 4 */
+    --app-5:          #e87ba4; /* magenta slot 5 */
+    --cat-6:          #008300; /* green   slot 6 */
+    --cat-7:          #4a3aa7; /* violet  slot 7 */
+    --cat-8:          #e34948; /* red     slot 8 */
+
+    --seq-100: #cde2fb; --seq-150:#b7d3f6; --seq-200:#9ec5f4; --seq-250:#86b6ef;
+    --seq-300: #6da7ec; --seq-350:#5598e7; --seq-400:#3987e5; --seq-450:#2a78d6;
+    --seq-500: #256abf; --seq-550:#1c5cab; --seq-600:#184f95; --seq-650:#104281;
+    --seq-700: #0d366b;
+
+    --div-pos-1: #b7d3f6; --div-pos-2: #2a78d6; --div-pos-3: #184f95;
+    --div-neg-1: #f3c3c2; --div-neg-2: #e34948; --div-neg-3: #9c2726;
+    --div-mid:   #f0efec;
+
+    --chip-bg: #f9f9f7; --chip-active-bg: #0b0b0b; --chip-active-fg: #fcfcfb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:           #2c2c2a;
+      --axis:           #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-base:    #3987e5;
+      --series-tuned:     #d95926;
+      --series-tuned-alt:    #199e70;
+      --app-4:          #c98500;
+      --app-5:          #d55181;
+      --cat-6:          #008300;
+      --cat-7:          #9085e9;
+      --cat-8:          #e66767;
+
+      --div-pos-1: #184f95; --div-pos-2: #3987e5; --div-pos-3: #b7d3f6;
+      --div-neg-1: #7a2726; --div-neg-2: #e66767; --div-neg-3: #f3c3c2;
+      --div-mid:   #383835;
+
+      --chip-bg: #0d0d0d; --chip-active-bg: #ffffff; --chip-active-fg: #0b0b0b;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --page:           #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --grid:           #2c2c2a;
+    --axis:           #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-base:    #3987e5;
+    --series-tuned:     #d95926;
+    --series-tuned-alt:    #199e70;
+    --app-4:          #c98500;
+    --app-5:          #d55181;
+    --cat-6:          #008300;
+    --cat-7:          #9085e9;
+    --cat-8:          #e66767;
+
+    --div-pos-1: #184f95; --div-pos-2: #3987e5; --div-pos-3: #b7d3f6;
+    --div-neg-1: #7a2726; --div-neg-2: #e66767; --div-neg-3: #f3c3c2;
+    --div-mid:   #383835;
+
+    --chip-bg: #0d0d0d; --chip-active-bg: #ffffff; --chip-active-fg: #0b0b0b;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--page); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text-primary); }
+  .viz-root { max-width: 1100px; margin: 0 auto; padding: 26px 20px 90px; }
+  /* Builder charts nest several dimensions on one axis and get wide, so the Builder
+     column grows with the window instead of staying in the 1100px reading measure. */
+  .viz-root.wide { max-width: min(2000px, 100%); }
+
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lede { color: var(--text-secondary); font-size: 13.5px; margin: 0 0 18px; max-width: 72ch; line-height: 1.5; }
+
+  .controls {
+    position: sticky; top: 8px; z-index: 6;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px 12px; margin-bottom: 22px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.06);
+  }
+  .ctrl-row { display: flex; align-items: flex-start; gap: 14px; padding: 6px 0; flex-wrap: wrap; }
+  .ctrl-row + .ctrl-row { border-top: 1px solid var(--grid); }
+  .ctrl-label {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted);
+    width: 92px; flex: none; padding-top: 6px; font-weight: 600;
+  }
+  .chip-group { display: flex; gap: 6px; flex-wrap: wrap; flex: 1 1 auto; }
+  .chip {
+    font: inherit; font-size: 12.5px; color: var(--text-secondary);
+    background: var(--chip-bg); border: 1px solid var(--border); border-radius: 999px;
+    padding: 5px 12px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+    user-select: none; transition: background .1s, color .1s;
+  }
+  .chip:hover { border-color: var(--axis); }
+  .chip[aria-pressed="true"] { background: var(--chip-active-bg); color: var(--chip-active-fg); border-color: var(--chip-active-bg); }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .chip-mini { font-size: 11px; padding: 3px 9px; color: var(--text-muted); background: none; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; }
+  .chip-mini:hover { color: var(--text-primary); }
+  select {
+    font: inherit; font-size: 13px; color: var(--text-primary);
+    background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
+  }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 2px 0 4px; font-size: 12px; }
+  .legend .item { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+  .legend .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+
+  .empty-state {
+    text-align: center; color: var(--text-muted); font-size: 13.5px;
+    padding: 60px 20px; border: 1px dashed var(--border); border-radius: 12px;
+  }
+
+  .app-card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 20px 20px; margin-bottom: 18px;
+  }
+  .app-card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .app-card h2 .count { font-size: 11px; color: var(--text-muted); font-weight: 400; }

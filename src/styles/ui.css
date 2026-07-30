@@ -1,0 +1,202 @@
+  /* ---- mode tabs ---- */
+  .mode-tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+  .mode-tab {
+    font: inherit; font-size: 13px; color: var(--text-secondary); background: none; border: none;
+    padding: 8px 4px; margin-right: 14px; cursor: pointer; border-bottom: 2px solid transparent;
+  }
+  .mode-tab:hover { color: var(--text-primary); }
+  .mode-tab[aria-pressed="true"] { color: var(--text-primary); border-bottom-color: var(--text-primary); font-weight: 600; }
+
+  /* ---- builder toolbar ---- */
+  .builder-toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 18px;
+  }
+  .btn {
+    font: inherit; font-size: 12.5px; color: var(--text-primary); background: var(--page);
+    border: 1px solid var(--border); border-radius: 7px; padding: 6px 12px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--axis); }
+  .btn.primary { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+  .btn.small { font-size: 11.5px; padding: 4px 9px; }
+  .btn.danger:hover { border-color: var(--div-neg-2); color: var(--div-neg-2); }
+  .toolbar-sep { width: 1px; align-self: stretch; background: var(--border); }
+  .builder-status {
+    flex-basis: 100%; display: flex; align-items: center; gap: 8px;
+    font-size: 11.5px; color: var(--text-secondary); min-height: 18px;
+  }
+  .builder-status:empty { display: none; }
+  .view-select { font: inherit; font-size: 12.5px; background: var(--page); border: 1px solid var(--border); border-radius: 7px; padding: 5px 8px; color: var(--text-primary); }
+  input[type="text"].name-input {
+    font: inherit; font-size: 12.5px; background: var(--page); border: 1px solid var(--border);
+    border-radius: 7px; padding: 5px 8px; color: var(--text-primary); width: 140px;
+  }
+
+  /* ---- plot card ---- */
+  .plot-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px 18px; margin-bottom: 18px; }
+  .plot-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .plot-head .plot-title { font-size: 14px; font-weight: 600; margin-right: auto; }
+  .plot-head select { font: inherit; font-size: 12.5px; background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+  .plot-config { margin-bottom: 14px; }
+  .config-block h4 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 0 0 8px; font-weight: 600; }
+  .dims-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+
+  /* ---- grouping zones (X-axis / Series / Facets) ---- */
+  .zones { display: flex; flex-direction: column; gap: 8px; }
+  .zone {
+    border: 1px dashed var(--border); border-radius: 9px; padding: 7px 9px 9px; background: var(--page);
+  }
+  .zone.drag-over { border-color: var(--series-base); background: color-mix(in srgb, var(--series-base) 8%, var(--page)); }
+  .zone > .zone-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+  .zone > .zone-head .zone-name {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; color: var(--text-secondary);
+  }
+  .zone > .zone-head .zone-hint { font-size: 10.5px; color: var(--text-muted); }
+  .zone-body { display: flex; flex-wrap: wrap; gap: 5px; min-height: 30px; align-items: flex-start; }
+  .zone-empty { font-size: 11px; color: var(--text-muted); padding: 6px 2px; }
+  .zone-chip {
+    display: flex; align-items: center; gap: 5px; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 7px; padding: 3px 6px 3px 7px;
+    font-size: 12px; cursor: grab; user-select: none;
+  }
+  .zone-chip.dragging { opacity: .4; }
+  .zone-chip .handle { color: var(--text-muted); font-size: 11px; }
+  .zone-chip .order-num {
+    font-size: 9.5px; color: var(--text-muted); background: var(--page);
+    border: 1px solid var(--border); border-radius: 999px; padding: 0 5px;
+  }
+  .zone-chip button.mini {
+    border: 1px solid var(--border); background: var(--page); color: var(--text-secondary);
+    border-radius: 5px; cursor: pointer; font-size: 10px; line-height: 1; padding: 2px 4px;
+  }
+  .zone-chip button.mini:hover { color: var(--text-primary); border-color: var(--text-muted); }
+  .zone-chip select { font-size: 10.5px; padding: 1px 3px; }
+  .zone-chip.metric-chip { border-color: var(--series-base); background: color-mix(in srgb, var(--series-base) 10%, var(--surface-1)); }
+
+  /* ---- "data shown" (Metric) block — prominent, full width, first ---- */
+  .data-shown-block {
+    margin-bottom: 16px; padding: 12px 14px 14px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--page);
+  }
+  .data-shown-block > .dim-label { font-size: 13px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; flex-wrap: wrap; }
+  .data-shown-block .dim-block { border: none; padding: 0; }
+  .data-shown-block .role-badge { font-weight: 400; }
+
+  /* ---- dual list (included values) ---- */
+  .dim-block { border: 1px solid var(--border); border-radius: 8px; padding: 8px 9px 9px; }
+  .dim-block .dim-label { font-size: 11.5px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .dual-list { display: flex; gap: 8px; }
+  .dual-col { flex: 1; min-width: 0; }
+  .dual-col .col-label { font-size: 9.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+  .dual-col-body {
+    display: flex; flex-direction: column; gap: 3px; min-height: 28px;
+    background: var(--page); border: 1px dashed var(--border); border-radius: 6px; padding: 4px;
+  }
+  .dual-col-body.drag-over { border-color: var(--series-base); background: color-mix(in srgb, var(--series-base) 8%, var(--page)); }
+  .dnd-chip {
+    display: flex; align-items: center; gap: 6px; font-size: 11.5px; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px; cursor: pointer; user-select: none;
+  }
+  .dnd-chip:hover { border-color: var(--axis); background: var(--chip-bg); }
+  .dnd-chip:focus-visible { outline: 2px solid var(--series-base); outline-offset: 1px; }
+  .dnd-chip.dragging { opacity: .4; }
+  .dnd-chip .swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .dnd-chip button {
+    margin-left: auto; border: none; background: none; color: var(--text-muted); cursor: pointer;
+    font-size: 13px; line-height: 1; padding: 0 2px;
+  }
+  .dnd-chip button:hover { color: var(--text-primary); }
+  .dim-warning { font-size: 11px; color: var(--div-neg-3); margin-top: 6px; }
+
+  .plot-render { margin-top: 4px; }
+  .leaf-shell { position: relative; }
+  .leaf-tools { position: absolute; top: 0; right: 0; opacity: 0; transition: opacity .12s; }
+  .leaf-shell:hover .leaf-tools, .leaf-tools:focus-within { opacity: 1; }
+  .btn.ghost { background: var(--surface-1); color: var(--text-muted); border-color: var(--border); font-size: 10.5px; padding: 2px 7px; }
+  .btn.ghost:hover { color: var(--text-primary); border-color: var(--axis); }
+  .facet-card > h5 { display: flex; align-items: center; gap: 8px; }
+  .facet-card > h5 .btn.ghost, .metric-panel .panel-title .btn.ghost { margin-left: auto; }
+  .metric-panel .panel-title { display: flex; align-items: center; gap: 8px; }
+  /* wide nested-axis charts scroll inside their own box instead of shrinking to illegibility */
+  .svg-scroll { overflow-x: auto; overflow-y: hidden; max-width: 100%; padding-bottom: 2px; }
+  .svg-scroll svg { width: auto; max-width: none; }
+  .chart-note { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .tex-modal {
+    position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.45);
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .tex-card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    width: min(900px, 100%); max-height: 100%; display: flex; flex-direction: column;
+    padding: 14px 16px 12px; box-shadow: 0 18px 50px rgba(0,0,0,.3);
+  }
+  .tex-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .tex-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .tex-tab {
+    font: inherit; font-size: 11px; padding: 3px 10px; border-radius: 999px; cursor: pointer;
+    background: var(--page); color: var(--text-secondary); border: 1px solid var(--border);
+  }
+  .tex-tab[aria-pressed="true"] { background: var(--chip-active-bg); color: var(--chip-active-fg); border-color: var(--chip-active-bg); }
+  .tex-name { font-weight: 700; font-size: 13px; margin-right: auto; }
+  .tex-source {
+    flex: 1; min-height: 320px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px; line-height: 1.45; color: var(--text-primary); background: var(--page);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px; resize: vertical; white-space: pre;
+  }
+  .tex-note { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+  .head-toggle { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--text-secondary); cursor: pointer; user-select: none; }
+  .head-toggle input { margin: 0; }
+  .axis-right { fill: var(--text-secondary); }
+  .axis-legend { gap: 0; align-items: flex-start; }
+  .axis-legend .legend-group { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; padding: 3px 0; }
+  .axis-legend .legend-group.right {
+    margin-left: 26px; padding-left: 26px; border-left: 1px solid var(--border);
+  }
+  @media (max-width: 720px) {
+    .axis-legend .legend-group.right { margin-left: 0; padding-left: 0; border-left: none; border-top: 1px solid var(--border); width: 100%; }
+  }
+  .axis-legend .legend-cap {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--text-muted); font-weight: 700;
+  }
+  .axis-legend .legend-note { flex-basis: 100%; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .series-line { stroke-linejoin: round; stroke-linecap: round; }
+  .zero-line-right { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 5 3; opacity: .55; }
+  .series-dot { stroke: var(--surface-1); stroke-width: 1.5; }
+  .legend .swatch.dashed { background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.85) 0 2px, transparent 2px 5px); }
+  .scale-legend .item { gap: 3px; }
+  .scale-legend .scale-step { width: 16px; height: 10px; flex: none; }
+  .scale-legend .scale-step:first-of-type { border-radius: 2px 0 0 2px; }
+  .scale-legend .scale-step:last-of-type { border-radius: 0 2px 2px 0; }
+  .scale-legend .scale-end { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+  .scale-legend .scale-note { color: var(--text-muted); margin-left: 6px; }
+  /* ---- table plot type ---- */
+  .plot-table-wrap { overflow: auto; max-width: 100%; max-height: 620px; border: 1px solid var(--border); border-radius: 10px; }
+  .plot-table { border-collapse: separate; border-spacing: 0; font-size: 12px; width: max-content; min-width: 100%; }
+  .plot-table th, .plot-table td { padding: 5px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+  .plot-table thead th {
+    position: sticky; background: var(--surface-1); color: var(--text-secondary);
+    font-weight: 600; font-size: 11px; text-align: center; border-bottom: 1px solid var(--border);
+  }
+  .plot-table thead tr:nth-child(1) th { top: 0; }
+  .plot-table thead tr:nth-child(2) th { top: 26px; }
+  .plot-table thead tr:nth-child(3) th { top: 52px; }
+  .plot-table thead tr:nth-child(4) th { top: 78px; }
+  .plot-table th.corner, .plot-table td.rowhead { text-align: left; }
+  .plot-table th.corner { z-index: 2; }
+  .plot-table td.rowhead { color: var(--text-secondary); font-weight: 600; background: var(--page); }
+  .plot-table td.num { font-variant-numeric: tabular-nums; color: var(--text-primary); }
+  .plot-table td.num.empty { color: var(--text-muted); }
+  .plot-table td.num.repeat { color: var(--text-muted); opacity: .55; cursor: help; }
+  .plot-table td.num.pos { color: var(--div-pos-3); }
+  .plot-table td.num.neg { color: var(--div-neg-3); }
+  .plot-table tbody tr:hover td { background: color-mix(in srgb, var(--series-base) 7%, transparent); }
+  .metric-panel + .metric-panel { margin-top: 6px; }
+  .metric-panel .panel-title { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin: 0 0 2px; }
+  .axis-band-line { stroke: var(--border); stroke-width: 1; }
+  .axis-band-label { fill: var(--text-secondary); font-size: 10px; font-weight: 600; }
+  .facet-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px 14px; margin-bottom: 12px; background: var(--page); }
+  .facet-card h5 { font-size: 11px; color: var(--text-secondary); margin: 0 0 10px; font-weight: 600; }
+  .facet-card .facet-card { background: var(--surface-1); }
+  .plot-empty { font-size: 12px; color: var(--text-muted); padding: 16px 0; }
