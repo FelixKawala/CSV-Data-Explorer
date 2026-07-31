@@ -133,8 +133,49 @@ function dimValueLabel(dimKey, value) {
 
 function metricValueAt(ctx) { return DS ? datasetValueAt(DS, ctx) : null; }
 function metricIgnoresDim(metricKey, dimKey) {
-  return measureIgnoresDim(METRIC_BY_KEY[metricKey], dimKey);
+  return measureIgnoresDim(METRIC_BY_KEY[metricKey], dimKey, METRIC_BY_KEY);
 }
+
+// ---- measures defined from the page ----------------------------------------
+// Comparison measures and calculated ones are both just measures with no column
+// of their own, so they are added the same way: onto the live dataset, then the
+// schema is rebuilt so they appear in every plot's "Data shown" list. Plots keep
+// their configuration -- nothing about the existing ones changes.
+function addCustomMeasure(measure) {
+  if (!DS || !measure || METRIC_BY_KEY[measure.key]) return null;
+  // Marks it as the page's rather than the dataset's: the measures a bundle or
+  // an import declared are not the user's to withdraw here.
+  measure.userDefined = true;
+  DS.measures.push(measure);
+  DS.measureByKey[measure.key] = measure;
+  useDataset(DS);
+  plots.forEach(p => {
+    if (!p.included[MEASURE_DIM]) p.included[MEASURE_DIM] = [];
+  });
+  persistCustomMeasures();
+  return measure;
+}
+
+function removeCustomMeasure(key) {
+  const m = METRIC_BY_KEY[key];
+  if (!DS || !m || !m.userDefined) return false;
+  // Anything built on top of it would silently start returning nothing.
+  const dependents = DS.measures.filter(
+    o => o.formula && o.formula.refs.indexOf(key) !== -1);
+  if (dependents.length) return dependents.map(d => d.label);
+  DS.measures = DS.measures.filter(o => o.key !== key);
+  delete DS.measureByKey[key];
+  plots.forEach(p => {
+    if (p.included[MEASURE_DIM]) {
+      p.included[MEASURE_DIM] = p.included[MEASURE_DIM].filter(v => v !== key);
+    }
+  });
+  useDataset(DS);
+  persistCustomMeasures();
+  return true;
+}
+
+function customMeasures() { return DS ? DS.measures.filter(m => m.userDefined) : []; }
 function anyMetricIgnores(plot, dims) {
   for (let i = 0; i < plot.included[MEASURE_DIM].length; i++) {
     for (let j = 0; j < dims.length; j++) {

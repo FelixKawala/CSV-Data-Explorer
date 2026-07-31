@@ -44,11 +44,33 @@ A **comparison measure** ("Rate A, dev1 versus dev3") can be defined from the
 Builder toolbar: pick a measure, a dimension, two of its values and an
 operation.
 
+## Calculating a new measure
+
+The **calculator** (Builder toolbar) defines a measure as arithmetic over the
+others — `(100% - [L2 Hit Rate]) * [L2 Accesses]` gives the miss count. Click a
+measure to insert it; names go in brackets when they contain spaces. Operators
+are `+ − * / ^` with brackets, plus `abs, min, max, clamp, sqrt, ln, log10, exp`.
+
+It tracks units, which is the part that matters. A hit rate is stored as `62.13`
+because that is how an axis reads it, so multiplying it by a count naively gives
+a hundred times the answer — and the answer still looks plausible. Instead every
+operand is converted to its dimensionless value before any arithmetic and
+converted back once at the end, so `100%` is a proportion either way and a rate
+times a count is a count. The result's kind is inferred (`rate × count → count`,
+`count ÷ count → a percentage`) and shown next to the preview, which evaluates
+against a real row and lists the operands it used. Mixing kinds that do not
+combine is allowed but says so.
+
+Missing operands give a missing result rather than a zero, so gaps stay gaps.
+Both kinds of defined measure are stored with the dataset — a formula as the
+text that was typed — and recompiled on load.
+
 ## Layout
 
     src/js/00-core      dataset handle, DOM helpers
     src/js/05-format    how a measure is scaled, coloured and printed
     src/js/06-model     the columnar dataset and its O(#dims) lookup
+    src/js/08-formula   the calculator: parse, unit inference, evaluate
     src/js/15-csv       parser and column profiling
     src/js/30-store     IndexedDB, plus an in-memory store for tests
     src/js/40-import-ui the Data tab

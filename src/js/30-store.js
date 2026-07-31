@@ -140,7 +140,69 @@ function datasetFromRecord(rec) {
     }
   });
 
-  return makeDataset({ name: rec.name, dims, measures, rows });
+  const ds = makeDataset({ name: rec.name, dims, measures, rows });
+  attachCustomMeasures(ds, rec.recipe.custom);
+  return ds;
+}
+
+// ---- measures the user defined on the page ---------------------------------
+// A comparison or a calculated measure holds no data, only a rule, so it is
+// stored with the recipe rather than with the columns. A formula is stored as
+// the text the user wrote and recompiled on load: the text is the record, and
+// recompiling re-checks that every name it mentions still resolves.
+function serializeCustomMeasure(m) {
+  return {
+    key: m.key,
+    label: m.label,
+    format: m.format ? m.format.key : 'number',
+    derived: m.derived || null,
+    formula: m.formula ? { expr: m.formula.expr } : null,
+  };
+}
+
+// Order matters: a formula may refer to a measure defined just before it, so
+// each one is attached before the next is compiled.
+function attachCustomMeasures(ds, specs) {
+  if (!Array.isArray(specs)) return [];
+  const dropped = [];
+  specs.forEach(spec => {
+    if (!spec || !spec.key || ds.measureByKey[spec.key]) return;
+    let measure = null;
+    if (spec.derived) {
+      if (!ds.measureByKey[spec.derived.base]) { dropped.push(spec.label); return; }
+      measure = { key: spec.key, label: spec.label, format: makeFormat(spec.format), derived: spec.derived };
+    } else if (spec.formula) {
+      try {
+        measure = {
+          key: spec.key,
+          label: spec.label,
+          format: makeFormat(spec.format),
+          formula: compileFormula(spec.formula.expr, ds.measures, spec.format),
+        };
+      } catch (e) { dropped.push(spec.label); return; }
+    }
+    if (!measure) return;
+    measure.userDefined = true;
+    ds.measures.push(measure);
+    ds.measureByKey[measure.key] = measure;
+  });
+  return dropped;
+}
+
+// Best effort: with data embedded in the page there is no stored record to
+// update, and the measure still works for this visit.
+function persistCustomMeasures() {
+  const id = activeDatasetId();
+  if (!id || !DS) return Promise.resolve(false);
+  const specs = DS.measures.filter(m => m.userDefined).map(serializeCustomMeasure);
+  return Promise.resolve()
+    .then(() => STORE.get(id))
+    .then(rec => {
+      if (!rec || !rec.recipe) return false;
+      rec.recipe.custom = specs;
+      return STORE.put(rec).then(() => true);
+    })
+    .catch(() => false);
 }
 
 function newDatasetId() {

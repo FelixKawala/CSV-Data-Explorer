@@ -14,6 +14,9 @@
 // everywhere in the UI, but it selects a column rather than filtering rows.
 const MEASURE_DIM = 'metric';
 
+// A measure with no column of its own: it is computed from the others.
+function isComputedMeasure(m) { return !!(m && (m.derived || m.formula)); }
+
 function makeDim(spec) {
   const values = spec.values.slice();
   const codeOf = new Map();
@@ -67,7 +70,7 @@ function makeDataset(spec) {
   const sums = {};
   const hits = {};
   measures.forEach(m => {
-    if (m.derived) return;
+    if (isComputedMeasure(m)) return;
     vals[m.key] = new Float64Array(rows.length).fill(NaN);
     sums[m.key] = new Float64Array(rows.length);
     hits[m.key] = new Int32Array(rows.length);
@@ -95,7 +98,7 @@ function makeDataset(spec) {
     }
     for (let mi = 0; mi < measures.length; mi++) {
       const m = measures[mi];
-      if (m.derived) continue;
+      if (isComputedMeasure(m)) continue;
       const v = row[m.key];
       if (v === null || v === undefined || v === '' || Number.isNaN(Number(v))) continue;
       sums[m.key][r] += Number(v);
@@ -105,7 +108,7 @@ function makeDataset(spec) {
 
   let filled = 0;
   measures.forEach(m => {
-    if (m.derived) return;
+    if (isComputedMeasure(m)) return;
     const out = vals[m.key];
     for (let r = 0; r < nRows; r++) {
       if (!hits[m.key][r]) continue;
@@ -159,16 +162,50 @@ function derivedValue(ds, ctx, spec) {
   return a - b;
 }
 
+// A calculated measure is an expression over other measures, evaluated at this
+// tuple. Operands are read through datasetValueAt, so a formula may refer to a
+// comparison measure or to an earlier formula; a cycle is impossible because
+// every name has to resolve to a measure that already exists.
+function formulaValue(ds, ctx, spec) {
+  const get = key => {
+    const m = ds.measureByKey[key];
+    if (!m) return null;
+    const c = Object.assign({}, ctx);
+    c[MEASURE_DIM] = key;
+    const v = datasetValueAt(ds, c);
+    return v === null ? null : v * ratioScale(m.format);
+  };
+  const raw = evalFormulaNode(spec.ast, get);
+  return raw === null ? null : raw * spec.outScale;
+}
+
 function datasetValueAt(ds, ctx) {
   const m = ds.measureByKey[ctx[MEASURE_DIM]];
   if (!m) return null;
   if (m.derived) return derivedValue(ds, ctx, m.derived);
+  if (m.formula) return formulaValue(ds, ctx, m.formula);
   return rawMeasureAt(ds, ctx, m.key);
 }
 
 // Which dimensions a measure does not vary along -- a derived measure has
 // already consumed the dimension it compares over, so repeating it would draw
-// the same number once per value of it.
-function measureIgnoresDim(m, dimKey) {
-  return !!(m && m.derived && m.derived.over === dimKey);
+// the same number once per value of it. A formula inherits that from whatever
+// it refers to: (a - b) * count still does not vary along the compared
+// dimension, so `byKey` is needed to follow the references.
+function measureIgnoresDim(m, dimKey, byKey) {
+  if (!m) return false;
+  if (m.derived) return m.derived.over === dimKey;
+  if (m.formula && byKey) {
+    return m.formula.refs.some(k => k !== m.key && measureIgnoresDim(byKey[k], dimKey, byKey));
+  }
+  return false;
+}
+
+// A dimension tuple for one stored row, used to preview a formula against real
+// data rather than against a number the user has to trust.
+function datasetCtxAtRow(ds, r) {
+  const ctx = {};
+  if (r < 0 || r >= ds.nRows) return ctx;
+  ds.dims.forEach(d => { ctx[d.key] = d.values[ds.codes[d.key][r]]; });
+  return ctx;
 }

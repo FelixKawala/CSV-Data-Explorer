@@ -148,8 +148,23 @@ function renderBuilderToolbar() {
   deriveBtn.type = 'button'; deriveBtn.className = 'btn small'; deriveBtn.id = 'derive-toggle';
   deriveBtn.textContent = deriveOpen ? 'Close comparison' : '+ Comparison measure';
   deriveBtn.title = 'Define a measure that compares another one across two values of a dimension';
-  deriveBtn.addEventListener('click', () => { deriveOpen = !deriveOpen; renderBuilder(); });
+  deriveBtn.addEventListener('click', () => {
+    deriveOpen = !deriveOpen;
+    if (deriveOpen) formulaOpen = false;
+    renderBuilder();
+  });
   bar.appendChild(deriveBtn);
+
+  const calcBtn = document.createElement('button');
+  calcBtn.type = 'button'; calcBtn.className = 'btn small'; calcBtn.id = 'formula-toggle';
+  calcBtn.textContent = formulaOpen ? 'Close calculator' : '+ Calculated measure';
+  calcBtn.title = 'Define a measure as arithmetic over the existing ones';
+  calcBtn.addEventListener('click', () => {
+    formulaOpen = !formulaOpen;
+    if (formulaOpen) deriveOpen = false;
+    renderBuilder();
+  });
+  bar.appendChild(calcBtn);
 
   const status = html('div', 'builder-status', bar);
   status.id = 'builder-status';
@@ -157,6 +172,11 @@ function renderBuilderToolbar() {
   if (deriveOpen) {
     const holder = html('div', 'derive-holder', bar);
     renderDeriveForm(holder);
+  }
+  if (formulaOpen) {
+    const holder = html('div', 'derive-holder', bar);
+    holder.id = 'formula-holder';
+    renderFormulaForm(holder);
   }
 
   refreshSavedViewsSelect();

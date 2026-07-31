@@ -34,21 +34,12 @@ function addDerivedMeasure(spec) {
   const label = spec.label || derivedMeasureLabel(
     spec.op, base.label, dim.labelFor(spec.a), dim.labelFor(spec.b));
   const key = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-  const measure = {
+  return addCustomMeasure({
     key,
     label,
     format: makeFormat(opDef.format),
     derived: { op: spec.op, base: spec.base, over: spec.over, a: spec.a, b: spec.b },
-  };
-  // Add to the live dataset, then rebuild the schema so the new measure appears
-  // in "Data shown" everywhere. Plots keep their configuration.
-  DS.measures.push(measure);
-  DS.measureByKey[key] = measure;
-  useDataset(DS);
-  plots.forEach(p => {
-    if (!p.included[MEASURE_DIM]) p.included[MEASURE_DIM] = [];
   });
-  return measure;
 }
 
 // `initial` carries the choices forward when changing the compared dimension

@@ -87,3 +87,30 @@ function seqDomain(f, dataMax) {
   if (f && Array.isArray(f.domain)) return f.domain[1];
   return dataMax;
 }
+
+// ---- units, for arithmetic across measures ---------------------------------
+// A percentage is stored the way it reads -- 62.13, not 0.6213 -- which is right
+// for an axis and wrong for algebra: a hit rate times an access count comes out
+// a hundred times too large. So the calculator converts every operand to its
+// dimensionless value first, computes there, and converts once at the end.
+//
+// `ratioScale` is the factor from stored to dimensionless.
+function ratioScale(f) {
+  return f && (f.key === 'pct' || f.key === 'reldelta') ? 0.01 : 1;
+}
+
+// What kind of quantity a format measures. Two quantities of the same class may
+// be added; multiplying by a `ratio` (a proportion, dimensionless) preserves the
+// other operand's class, which is what makes (1 − rate) × count a count.
+function quantityClass(f) {
+  if (!f) return 'number';
+  if (f.key === 'pct' || f.key === 'fraction' || f.key === 'reldelta') return 'ratio';
+  if (f.key === 'count') return 'count';
+  if (f.key === 'bytes') return 'bytes';
+  if (f.key === 'duration') return 'duration';
+  return 'number';
+}
+
+// The format a result of that class is shown in unless the user picks another.
+const CLASS_FORMAT = { ratio: 'pct', count: 'count', bytes: 'bytes', duration: 'duration', number: 'number', plain: 'number' };
+function formatForClass(cls) { return makeFormat(CLASS_FORMAT[cls] || 'number'); }
