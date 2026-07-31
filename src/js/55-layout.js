@@ -11,12 +11,34 @@ function scrollWrap(container, svg, w, h, spec) {
   return box;
 }
 
-function seriesLegend(container, sVals, seriesDims) {
+// The swatch has to show whatever distinguishes the series. Once shape or
+// texture is carrying part of that, a flat colour square is no longer a key --
+// it would say the series are told apart by colour alone, which is exactly the
+// claim these options exist to stop making.
+function seriesLegend(container, sVals, seriesDims, style, chartType) {
   if (sVals.length <= 1) return;
   const legend = html('div', 'legend', container);
+  const shaped = style && chartType === 'lines' && style.markers !== 'none';
+  const textured = style && (chartType === 'bars' || chartType === 'diverging')
+    && style.barPattern !== 'none';
   sVals.forEach(s => {
     const item = html('div', 'item', legend);
-    html('span', 'swatch', item).style.background = s.color;
+    if (shaped || textured) {
+      const svg = el('svg', { class: 'swatch-svg', width: 14, height: 14, viewBox: '0 0 14 14' });
+      if (shaped) {
+        // its own class: a key is not a data point, and things count data points
+        drawMark(svg, s.shape || 'circle', 7, 7, 5, { fill: s.color, class: 'swatch-mark' });
+      } else {
+        el('rect', { x: 1, y: 3, width: 12, height: 8, rx: 2, fill: s.color }, svg);
+        const tex = patternFill(svg, s.pattern, 'var(--text-primary)');
+        if (tex) {
+          el('rect', { x: 1, y: 3, width: 12, height: 8, rx: 2, fill: tex, opacity: 0.5 }, svg);
+        }
+      }
+      item.appendChild(svg);
+    } else {
+      html('span', 'swatch', item).style.background = s.color;
+    }
     html('span', null, item).textContent = s.label;
   });
 }

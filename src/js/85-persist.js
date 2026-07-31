@@ -8,7 +8,7 @@ const LS_AUTOSAVE_SHAPE = 'viz-builder-autosave-shape-v1';
 function serializePlots() {
   return plots.map(p => ({
     chartType: p.chartType, repeatPanelAxis: p.repeatPanelAxis, dualAxis: p.dualAxis,
-    breakLines: p.breakLines, collapseRepeats: p.collapseRepeats, yAxis: p.yAxis,
+    breakLines: p.breakLines, collapseRepeats: p.collapseRepeats, yAxis: p.yAxis, style: p.style,
     zones: p.zones, metricZone: p.metricZone,
     metricPos: p.metricPos, included: p.included,
   }));
@@ -81,6 +81,7 @@ function deserializePlots(cfg) {
       breakLines: p.breakLines !== false,
       collapseRepeats: p.collapseRepeats !== false,
       yAxis: normaliseYAxis(p.yAxis),
+      style: normalisePlotStyle(p.style),
       zones,
       metricZone: migrateMetricZone(p),
       metricPos: (typeof p.metricPos === 'number' && p.metricPos >= 0) ? p.metricPos : 99,

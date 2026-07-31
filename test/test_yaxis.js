@@ -150,7 +150,7 @@ console.log('\n=== 7. A line chart honours it too, and a table has no axis to se
   const { w, d } = boot();
   setType(w, d, 'lines');
   setBound(w, d, 1, '100');
-  const ys = Array.from(d.querySelectorAll('#plots circle.series-dot')).map(c => +c.getAttribute('cy'));
+  const ys = Array.from(d.querySelectorAll('#plots .series-dot')).map(c => +c.getAttribute('data-cy'));
   ok(ys.length > 0 && ys.every(y => y >= 0 && y <= 170), 'every marker is inside the frame',
      ys.length);
   ok(w.eval('plots[0].yAxis.max') === 100, 'the line chart took the bound');

@@ -48,7 +48,7 @@ console.log('\n=== 1. Line chart ===');
   const { w, d } = boot();
   setType(w, d, 'lines');
   const lines = d.querySelectorAll('#plots polyline.series-line');
-  const dots = d.querySelectorAll('#plots circle.series-dot');
+  const dots = d.querySelectorAll('#plots .series-dot');
   ok(dots.length === 121, 'a marker per data point, same count as the bars had', dots.length);
   ok(lines.length === 22, 'lines break per (Device, size) block by default', lines.length);
   ok(d.querySelectorAll('#plots rect.bar').length === 0, 'no bars in line mode');
@@ -69,7 +69,7 @@ console.log('\n=== 2. Isolated points are never joined across a gap ===');
   const counts = Array.from(d.querySelectorAll('#plots polyline.series-line'))
     .map(l => l.getAttribute('points').trim().split(' ').length);
   ok(counts.every(c => c === 5), 'every segment covers one block of 5 applications', Array.from(new Set(counts)).join(','));
-  const dots = d.querySelectorAll('#plots circle.series-dot').length;
+  const dots = d.querySelectorAll('#plots .series-dot').length;
   ok(dots === 121, 'every real point still has a marker', dots);
   ok(dots - counts.reduce((a, b) => a + b, 0) === 11, 'the 11 sparse-variant points are drawn unconnected',
      dots - counts.reduce((a, b) => a + b, 0));

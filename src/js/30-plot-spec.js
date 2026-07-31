@@ -70,6 +70,7 @@ function makeDefaultPlot() {
     dualAxis: false,
     // null and 'auto' mean "derive it from the data", exactly as before
     yAxis: { min: null, max: null, scale: 'auto' },
+    style: defaultPlotStyle(),
     breakLines: true,
     collapseRepeats: true,
     zones,
@@ -97,6 +98,7 @@ function clonePlot(p) {
     breakLines: p.breakLines,
     collapseRepeats: p.collapseRepeats,
     yAxis: Object.assign({ min: null, max: null, scale: 'auto' }, p.yAxis),
+    style: normalisePlotStyle(p.style),
     zones: cloneZones(p.zones),
     metricZone: p.metricZone,
     metricPos: p.metricPos,

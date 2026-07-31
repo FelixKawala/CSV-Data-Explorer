@@ -172,7 +172,11 @@ function renderPlotCard(plot) {
 
   const renderArea = html('div', 'plot-render', container);
   renderArea.id = 'plot-render-' + plot.id;
+  plot.__drawnSeries = [];
   renderPlotChart(plot, renderArea);
+  // after the chart, because the per-series rows list what was actually drawn --
+  // and because style is the last thing you reach for, not the first
+  renderStyleBlock(container, plot, rerender);
 
   const tableWrap = html('div', 'table-wrap hidden', container);
   tblBtn.addEventListener('click', () => {
@@ -193,4 +197,118 @@ function renderPlots() {
     renderPlotCard(plot);
   });
   persistPlotsDebounced();
+}
+
+
+// ---- style ------------------------------------------------------------------
+// Collapsed by default: this is the last thing you touch, after the chart says
+// the right thing, and it should not sit between you and the grouping controls.
+const styleOpen = {};
+function renderStyleBlock(container, plot, rerender) {
+  if (isGridType(plot.chartType)) return;
+  const style = plot.style || (plot.style = defaultPlotStyle());
+  const block = html('div', 'config-block style-block', container);
+  const head = html('button', 'style-toggle', block);
+  head.type = 'button';
+  head.setAttribute('data-plot', String(plot.id));
+  head.textContent = (styleOpen[plot.id] ? '▾ ' : '▸ ') + 'Style';
+  head.addEventListener('click', () => { styleOpen[plot.id] = !styleOpen[plot.id]; rerender(); });
+  if (!styleOpen[plot.id]) return;
+
+  const body = html('div', 'style-body', block);
+  const apply = () => { rerender(); persistPlotsDebounced(); };
+  const row = labelText => {
+    const r = html('label', 'style-row', body);
+    html('span', 'style-label', r).textContent = labelText;
+    return r;
+  };
+  const pick = (parent, opts, value, onChange, cls) => {
+    const sel = document.createElement('select');
+    if (cls) sel.className = cls;
+    opts.forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o[0]; opt.textContent = o[1];
+      sel.appendChild(opt);
+    });
+    sel.value = value;
+    sel.addEventListener('change', () => { onChange(sel.value); apply(); });
+    parent.appendChild(sel);
+    return sel;
+  };
+
+  const r1 = row('Colours');
+  pick(r1, Object.keys(PALETTES).map(k => [k, PALETTES[k].label]), style.palette,
+    v => { style.palette = v; }, 'style-palette');
+  html('span', 'radio-hint', r1).textContent =
+    style.palette === 'grey' ? 'shapes and textures carry the distinction' : '';
+
+  if (plot.chartType === 'bars' || plot.chartType === 'diverging') {
+    const r2 = row('Bars');
+    pick(r2, [['rounded', 'rounded'], ['square', 'square'], ['pill', 'pill']],
+      style.barCorner, v => { style.barCorner = v; }, 'style-corner');
+    pick(r2, [['none', 'solid']].concat([['auto', 'a texture each']])
+      .concat(BAR_PATTERNS.filter(p => p.key !== 'none').map(p => [p.key, p.label])),
+      style.barPattern, v => { style.barPattern = v; }, 'style-pattern');
+  }
+  if (plot.chartType === 'lines') {
+    const r3 = row('Points');
+    pick(r3, [['auto', 'a shape each'], ['none', 'none']]
+      .concat(MARK_SHAPES.map(m => [m.key, m.label])),
+      style.markers, v => { style.markers = v; }, 'style-markers');
+    const size = document.createElement('input');
+    size.type = 'range'; size.min = '2'; size.max = '8'; size.step = '0.5';
+    size.className = 'style-size';
+    size.value = String(style.markerSize);
+    size.title = 'Marker size';
+    size.addEventListener('change', () => { style.markerSize = Number(size.value); apply(); });
+    r3.appendChild(size);
+
+    const r4 = row('Lines');
+    const lw = document.createElement('input');
+    lw.type = 'range'; lw.min = '0.5'; lw.max = '5'; lw.step = '0.5';
+    lw.className = 'style-linewidth';
+    lw.value = String(style.lineWidth);
+    lw.title = 'Line width';
+    lw.addEventListener('change', () => { style.lineWidth = Number(lw.value); apply(); });
+    r4.appendChild(lw);
+  }
+
+  // per-series overrides, listed from what the chart actually drew
+  const drawn = plot.__drawnSeries || [];
+  if (drawn.length) {
+    html('div', 'style-sub', body).textContent = 'Per series';
+    drawn.forEach(sv => {
+      const r = html('div', 'style-row style-series', body);
+      html('span', 'style-label', r).textContent = sv.label;
+      const ov = style.series[sv.sig] || (style.series[sv.sig] = {});
+      const col = document.createElement('input');
+      col.type = 'color';
+      col.className = 'style-color';
+      col.setAttribute('data-sig', sv.sig);
+      col.value = ov.color || rgbToHexSafe(sv.color) || '#888888';
+      col.addEventListener('change', () => { ov.color = col.value; apply(); });
+      r.appendChild(col);
+      if (plot.chartType === 'lines') {
+        pick(r, [['', 'auto']].concat(MARK_SHAPES.map(m => [m.key, m.label])),
+          ov.shape || '', v => { if (v) ov.shape = v; else delete ov.shape; }, 'style-series-shape');
+      } else {
+        pick(r, [['', 'auto']].concat(BAR_PATTERNS.map(p => [p.key, p.label])),
+          ov.pattern || '', v => { if (v) ov.pattern = v; else delete ov.pattern; }, 'style-series-pattern');
+      }
+      const clr = document.createElement('button');
+      clr.type = 'button'; clr.className = 'btn small'; clr.textContent = 'auto';
+      clr.title = 'Drop the overrides for this series';
+      clr.addEventListener('click', () => { delete style.series[sv.sig]; apply(); });
+      r.appendChild(clr);
+    });
+  }
+}
+
+// A colour input needs six hex digits; the app's own colours are CSS variables.
+function rgbToHexSafe(paint) {
+  if (typeof paint === 'string' && /^#[0-9a-f]{6}$/i.test(paint)) return paint;
+  try {
+    const hex = rgbToHex(resolveVar(document.body, window, paint));
+    return hex ? '#' + hex : null;
+  } catch (e) { return null; }
 }

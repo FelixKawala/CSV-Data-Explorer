@@ -187,10 +187,22 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
   const xAll = comboEntries(plot, xD);
   // colour is assigned before any pruning so a series keeps its colour when other
   // series drop out of a facet (colour follows the entity, never its rank)
+  // Colour, shape and texture are all assigned before any pruning and all keyed
+  // to the series' slot rather than its index, so a series keeps its whole
+  // appearance when other series drop out of a facet.
+  const style = plot.style || (plot.style = defaultPlotStyle());
   seriesAll.forEach((e, i) => {
-    e.color = (sDims.length === 1)
-      ? dimValueColor(sDims[0], e.vals[sDims[0]])
-      : seriesColor(i);
+    const slot = (sDims.length === 1 && DIM_BY_KEY[sDims[0]])
+      ? Math.max(DIM_BY_KEY[sDims[0]].values.indexOf(e.vals[sDims[0]]), 0) : i;
+    const ov = style.series[seriesSignature(e)] || {};
+    e.sig = seriesSignature(e);
+    e.color = ov.color || ((sDims.length === 1)
+      ? paletteDimValueColor(style.palette, sDims[0], e.vals[sDims[0]])
+      : paletteColorAt(style.palette, i));
+    e.shape = ov.shape
+      || (style.markers === 'auto' ? markShapeAt(slot) : style.markers);
+    e.pattern = ov.pattern
+      || (style.barPattern === 'auto' ? barPatternAt(slot) : style.barPattern);
   });
 
   function getValue(sEntry, xEntry) {
@@ -206,6 +218,15 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     return;
   }
 
+  // What the style panel offers overrides for: the series this chart really has,
+  // after pruning, deduplicated across facets.
+  if (!plot.__drawnSeries) plot.__drawnSeries = [];
+  sVals.forEach(sv => {
+    if (!plot.__drawnSeries.some(o => o.sig === sv.sig)) {
+      plot.__drawnSeries.push({ sig: sv.sig, label: sv.label, color: sv.color });
+    }
+  });
+
   // A line may only join points inside one innermost group: crossing into the next
   // Device or size block would draw a slope between unrelated configurations.
   let lineBreaks = null;
@@ -218,7 +239,7 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     series: sVals, x: xVals, xDims: xD, seriesDims: sDims,
     lineBreaks: lineBreaks,
     getValue: getValue, kind: kindInfo.kind,
-    yAxis: plot.yAxis,
+    yAxis: plot.yAxis, style: style, chartType: plot.chartType,
     slots: opts.slots,
     collapseRepeats: plot.collapseRepeats !== false,
     fixedCtx: fixed,

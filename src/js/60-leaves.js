@@ -6,6 +6,7 @@ function renderBarLeaf(container, spec) {
   const showX = spec.showXLabels !== false && xDims.length > 0;
   // one delta series has nothing to tell apart, so colour carries polarity instead
   const signColoured = isDiverging(kind) && sVals.length === 1;
+  const style = spec.style || defaultPlotStyle();
   const slots = Math.max(spec.slots || sVals.length, sVals.length);
   const lay = xLayout(xVals, xDims, slots);
   const inset = (lay.groupW - (sVals.length * lay.unitW + (sVals.length - 1) * lay.gap)) / 2;
@@ -30,11 +31,23 @@ function renderBarLeaf(container, spec) {
       const barY = sc.clamp(sc.y(val));
       const barTop = Math.min(barY, sc.zeroY);
       const barH = Math.max(Math.abs(barY - sc.zeroY), 1);
+      const fill = signColoured ? (val >= 0 ? 'var(--div-pos-2)' : 'var(--div-neg-2)') : sv.color;
+      const rx = barCornerRadius(style.barCorner, lay.unitW, barH);
       const rect = el('rect', {
-        class: 'bar', fill: signColoured ? (val >= 0 ? 'var(--div-pos-2)' : 'var(--div-neg-2)') : sv.color,
+        class: 'bar', fill: fill,
         x: bx, y: barTop,
-        width: lay.unitW, height: barH, rx: Math.min(3, lay.unitW / 2)
+        width: lay.unitW, height: barH, rx: rx
       }, plotG);
+      // texture as a second rect over the solid colour, so `fill` stays a plain
+      // paint for anything that cannot resolve a url(#id)
+      const tex = signColoured ? null : patternFill(svg, sv.pattern, 'var(--text-primary)');
+      if (tex) {
+        el('rect', {
+          class: 'bar-texture', 'data-pattern': sv.pattern,
+          x: bx, y: barTop, width: lay.unitW, height: barH, rx: rx,
+          fill: tex, opacity: 0.5, 'pointer-events': 'none',
+        }, plotG);
+      }
       rect.addEventListener('mousemove', e => showTip(e, [
         xv.label + (sVals.length > 1 ? ' — ' + sv.label : ''), formatValue(kind, val)
       ]));
@@ -47,7 +60,7 @@ function renderBarLeaf(container, spec) {
   axisNotes(container, sc, all);
   if (spec.showLegend !== false) {
     if (signColoured) polarityLegend(container);
-    else seriesLegend(container, sVals, spec.seriesDims);
+    else seriesLegend(container, sVals, spec.seriesDims, spec.style, spec.chartType);
   }
 }
 
@@ -82,23 +95,25 @@ function renderLineLeaf(container, spec) {
   const plotG = el('g', { transform: 'translate(' + marginL + ',' + marginT + ')' }, svg);
 
   drawYAxis(plotG, sc, lay.plotW);
-  drawSeriesLines(plotG, sVals, xVals, lay, sc, getValue, kind, false, spec.lineBreaks);
+  drawSeriesLines(plotG, sVals, xVals, lay, sc, getValue, kind, false, spec.lineBreaks, spec.style);
   drawXAxis(plotG, xVals, xDims, lay, plotH, showX);
 
   scrollWrap(container, svg, w, h, spec);
   axisNotes(container, sc, all);
-  if (spec.showLegend !== false) seriesLegend(container, sVals, spec.seriesDims);
+  if (spec.showLegend !== false) seriesLegend(container, sVals, spec.seriesDims, spec.style, spec.chartType);
 }
 
 // shared by the line chart and the secondary axis of a dual-axis chart
-function drawSeriesLines(plotG, sVals, xVals, lay, sc, getValue, kind, dashed, breaks) {
+function drawSeriesLines(plotG, sVals, xVals, lay, sc, getValue, kind, dashed, breaks, style) {
+  style = style || defaultPlotStyle();
   const cx = gi => lay.gxs[gi] + lay.groupW / 2;
   sVals.forEach(sv => {
     let run = [];
     const flush = () => {
       if (run.length > 1) {
         const attrs = {
-          class: 'series-line', fill: 'none', stroke: sv.color, 'stroke-width': 2,
+          class: 'series-line', fill: 'none', stroke: sv.color,
+          'stroke-width': style.lineWidth || 2,
           points: run.map(p => p[0] + ',' + p[1]).join(' '),
         };
         if (dashed) attrs['stroke-dasharray'] = '5 3';
@@ -112,7 +127,9 @@ function drawSeriesLines(plotG, sVals, xVals, lay, sc, getValue, kind, dashed, b
       if (val === null || val === undefined) { flush(); return; }
       const px = cx(gi), py = sc.clamp(sc.y(val));
       run.push([px, py]);
-      const dot = el('circle', { class: 'series-dot', cx: px, cy: py, r: 3.5, fill: sv.color }, plotG);
+      if (style.markers === 'none') return;
+      const dot = drawMark(plotG, sv.shape || 'circle', px, py, style.markerSize || 3.5,
+        { fill: sv.color });
       dot.addEventListener('mousemove', e => showTip(e, [
         xv.label + (sVals.length > 1 ? ' — ' + sv.label : ''), formatValue(kind, val)
       ]));
@@ -169,7 +186,7 @@ function renderDualAxisLeaf(container, spec, asLines) {
   }
 
   if (asLines) {
-    drawSeriesLines(plotG, primary, xVals, lay, scL, getValue, primaryKind, false, spec.lineBreaks);
+    drawSeriesLines(plotG, primary, xVals, lay, scL, getValue, primaryKind, false, spec.lineBreaks, spec.style);
   } else {
     xVals.forEach((xv, gi) => {
       primary.forEach((sv, vi) => {
@@ -189,7 +206,7 @@ function renderDualAxisLeaf(container, spec, asLines) {
       });
     });
   }
-  drawSeriesLines(plotG, secondary, xVals, lay, scR, getValue, secondaryKind, true, spec.lineBreaks);
+  drawSeriesLines(plotG, secondary, xVals, lay, scR, getValue, secondaryKind, true, spec.lineBreaks, spec.style);
   drawXAxis(plotG, xVals, xDims, lay, plotH, showX);
 
   scrollWrap(container, svg, w, h, spec);

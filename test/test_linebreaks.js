@@ -30,7 +30,7 @@ console.log('\n=== 1. On by default: one line per innermost group ===');
   const s = segs(d);
   ok(s.length === 22, 'one segment per (Device, size) block per continuous series', s.length);
   ok(s.every(n => n === 5), 'each spans exactly the 5 applications', Array.from(new Set(s)).join(','));
-  ok(d.querySelectorAll('#plots circle.series-dot').length === 121, 'every point still has its marker');
+  ok(d.querySelectorAll('#plots .series-dot').length === 121, 'every point still has its marker');
   w.close();
 }
 

@@ -34,8 +34,8 @@ function escapes(d) {
       if (!isFinite(y) || !isFinite(h)) bad.push('NaN rect');
       else if (y < -1 || y + h > H + 1) bad.push('rect ' + y.toFixed(0) + '+' + h.toFixed(0) + ' vs H' + H);
     });
-    svg.querySelectorAll('circle.series-dot').forEach(c => {
-      const y = parseFloat(c.getAttribute('cy'));
+    svg.querySelectorAll('.series-dot').forEach(c => {
+      const y = parseFloat(c.getAttribute('data-cy'));
       if (!isFinite(y)) bad.push('NaN dot');
       else if (y < -1 || y > H + 1) bad.push('dot y=' + y.toFixed(0) + ' vs H' + H);
     });
@@ -74,7 +74,7 @@ console.log('\n=== 2. Line chart of a delta stays a line chart ===');
   setType(w, d, 'lines');
   rm(d, 'Rate A'); add(d, 'Δ Rate A (Tuned−Base)');
   ok(d.querySelectorAll('#plots polyline.series-line').length > 0, 'it draws lines');
-  ok(d.querySelectorAll('#plots circle.series-dot').length === 55, 'with a marker per point', d.querySelectorAll('#plots circle.series-dot').length);
+  ok(d.querySelectorAll('#plots .series-dot').length === 55, 'with a marker per point', d.querySelectorAll('#plots .series-dot').length);
   ok(d.querySelectorAll('#plots text.row-label').length === 0, 'and is no longer silently swapped for horizontal bars');
   const t = ticks(d);
   ok(t.some(x => x.indexOf('-') === 0) && t.indexOf('0pt') !== -1, 'negative and zero ticks present', t.join(' '));
