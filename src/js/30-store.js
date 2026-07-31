@@ -244,7 +244,7 @@ function datasetFromRecord(rec) {
           return v === undefined ? '' : v;
         });
         vals.forEach((v, k) => seen(melt.dims[k].key, v));
-        const sig = vals.join(' ');
+        const sig = vals.join(SIG_SEP);
         let g = Object.prototype.hasOwnProperty.call(bySig, sig) ? bySig[sig] : null;
         if (!g) { g = { vals, cells: [], keys: {} }; bySig[sig] = g; groups.push(g); }
         if (g.keys[picked.spec.key]) {

@@ -12,6 +12,15 @@ const DATA = (function () {
 const tooltip = document.getElementById('tooltip');
 const SVGNS = 'http://www.w3.org/2000/svg';
 
+// Joiners for composite keys: a tuple of dimension values, or a schema
+// signature. Control characters because no CSV cell can contain one, so
+// ["a","b"] and ["a\u0001b"] can never collide -- but written as escapes and
+// named here rather than pasted in as raw bytes. A literal NUL in a source file
+// makes grep treat it as binary and silently find nothing in it, which is a
+// remarkably expensive way to save two characters.
+const SIG_SEP = '\u0000';
+const SIG_GROUP = '\u0001';
+
 const VARIANTS = ['base', 'tuned', 'tunedAlt'];
 const VARIANT_COLOR = { base: 'var(--series-base)', tuned: 'var(--series-tuned)', tunedAlt: 'var(--series-tuned-alt)' };
 const VARIANT_LABEL = { base: 'Base', tuned: 'Tuned', tunedAlt: 'Tuned-alt' };

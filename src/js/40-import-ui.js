@@ -221,7 +221,7 @@ function restagePending() {
         const captured = live.hasMeasure ? (m.fields[PATTERN_MEASURE_FIELD] || '') : '';
         if (!captured) usesFallback = true;
         else if (order.indexOf(captured) === -1) order.push(captured);
-        const sig = pend.meltDims.map(d => m.fields[d.field] || '').join(' ');
+        const sig = pend.meltDims.map(d => m.fields[d.field] || '').join(SIG_SEP);
         if (!sigs[sig]) { sigs[sig] = 1; groups++; }
         const pool = pools[captured] || (pools[captured] = []);
         f.parsed.rows.forEach(r => pool.push(r[i]));
@@ -257,7 +257,7 @@ function restagePending() {
       if (m) ms[live.hasMeasure ? (m.fields[PATTERN_MEASURE_FIELD] || '') : ''] = 1;
       else ids.push(ded[i]);
     }
-    return ids.sort().join('') + '' + Object.keys(ms).sort().join('');
+    return ids.sort().join(SIG_SEP) + SIG_GROUP + Object.keys(ms).sort().join(SIG_SEP);
   };
   pend.sameShape = files.every(f => sig(f) === sig(files[0]));
   if (!pend.sameShape) pend.union = false;
