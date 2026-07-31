@@ -6,6 +6,7 @@
 evaluation/
 check/
 target/
+data/
 task.txt
 dataset.json
 
