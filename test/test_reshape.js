@@ -751,6 +751,57 @@ async function section21() {
   ok(w.eval('metricValueAt({app:"B",device:"2080",threads:"512",variant:"kbk",metric:METRICS[0].key})') === 70.1,
      'with the data behind it');
   w.close();
+  await section22();
+}
+
+async function section22() {
+  console.log('\n=== 22. A wide import still opens on a chart, not a refusal ===');
+  // The x-axis nests, so its width is the product of its dimensions. Ten of them
+  // ask for more cells than the renderer will draw, and the first thing after
+  // importing would be "that would draw 1,234,926 cells" instead of a chart.
+  const { w, d } = boot();
+  dataTab(d);
+  // eight dimensions plus a measure, in one tidy file
+  const cols = ['a', 'b', 'c', 'e', 'f', 'g', 'h', 'i'];
+  // four values each, so the axis product (4^8) is far past what will render
+  let text = cols.join(',') + ',v\n';
+  for (let n = 0; n < 64; n++) {
+    text += cols.map((_, k) => 'x' + ((n + k) % 4)).join(',') + ',' + n + '\n';
+  }
+  pick(w, [{ name: 'wide8.csv', text }]);
+  await wait(60);
+  cols.forEach(k => {
+    const sel = colRow(d, k).querySelectorAll('select')[0];
+    sel.value = 'dimension';
+    sel.dispatchEvent(new w.Event('change'));
+  });
+  await wait(30);
+  importBtn(d).click();
+  await wait(80);
+
+  ok(w.eval('GROUPABLE_KEYS.length') === 8, 'eight groupable dimensions', w.eval('GROUPABLE_KEYS.length'));
+  const z = JSON.parse(w.eval('JSON.stringify(plots[0].zones)'));
+  ok(z.facet[0] === 'a', 'the first still facets', z.facet.join(','));
+  ok(z.series.join(',') === 'i', 'the last still colours the series', z.series.join(','));
+  ok(z.facet.length > 1, 'and what will not fit on the axis facets instead',
+     JSON.stringify(z));
+  const width = z.x.concat(z.series)
+    .reduce((n, k) => n * w.eval('DIM_BY_KEY["' + k + '"].values.length'), 1);
+  ok(width <= 500, 'the axis stays inside its budget', width);
+  ok(!d.querySelector('#plots .plot-empty'), 'so nothing is refused',
+     (d.querySelector('#plots .plot-empty') || {}).textContent);
+  ok(d.querySelectorAll('#plots rect.bar').length > 0, 'and it draws',
+     d.querySelectorAll('#plots rect.bar').length);
+
+  // the refusal is still there for a layout the user builds themselves
+  w.eval('plots[0].zones = { x: GROUPABLE_KEYS.slice(0, -1), series: [GROUPABLE_KEYS[7]], facet: [] };'
+    + ' GROUPABLE_KEYS.forEach(k => { plots[0].included[k] = DIM_BY_KEY[k].values.slice(); });'
+    + ' renderPlots();');
+  const refused = d.querySelector('#plots .plot-empty');
+  ok(!!refused && /would draw/.test(refused.textContent),
+     'dragging everything onto the axis is still refused, with a reason',
+     refused && refused.textContent);
+  w.close();
 
   console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
   process.exit(failures === 0 ? 0 : 1);

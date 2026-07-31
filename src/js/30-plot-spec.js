@@ -5,12 +5,29 @@ let plotIdSeq = 1;
 // the innermost colours the series, and everything between shares the x-axis. A
 // facet dimension starts at one value, because otherwise opening the page would
 // draw a chart per value of it.
+//
+// The x-axis nests, so its width is the PRODUCT of its dimensions. Putting
+// everything on it is right for a handful of dimensions and impossible for ten:
+// an import with ten would ask for a million cells, and the render refuses past
+// twenty thousand -- so the first thing seen after importing would be a refusal
+// rather than a chart. Instead the axis is filled to a budget and the rest
+// facet, where each starts at a single value and costs nothing.
+const X_WIDTH_BUDGET = 500;
 function defaultZones() {
   const g = GROUPABLE_KEYS.slice();
   if (g.length === 0) return { x: [], series: [], facet: [] };
   if (g.length === 1) return { x: g.slice(), series: [], facet: [] };
   if (g.length === 2) return { x: [g[0]], series: [g[1]], facet: [] };
-  return { x: g.slice(1, -1), series: [g[g.length - 1]], facet: [g[0]] };
+  const sizeOf = k => Math.max(DIM_BY_KEY[k] ? DIM_BY_KEY[k].values.length : 1, 1);
+  const series = [g[g.length - 1]];
+  const facet = [g[0]];
+  const x = [];
+  let width = sizeOf(series[0]);
+  g.slice(1, -1).forEach(k => {
+    const n = sizeOf(k);
+    if (width * n <= X_WIDTH_BUDGET) { x.push(k); width *= n; } else facet.push(k);
+  });
+  return { x, series, facet };
 }
 function defaultIncluded(dimKey, zones) {
   if (dimKey === MEASURE_DIM) return METRICS.length ? [METRICS[0].key] : [];
