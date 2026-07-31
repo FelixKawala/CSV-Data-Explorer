@@ -5,12 +5,19 @@ const LS_VIEWS_KEY = 'viz-builder-views-v1';
 // A sidecar, so the autosave itself keeps exactly the format it always had.
 const LS_AUTOSAVE_SHAPE = 'viz-builder-autosave-shape-v1';
 
+// Detached, not aliased. This used to hand back live references to `zones`,
+// `included`, `yAxis` and `style`, which is invisible when the result is
+// immediately stringified for storage -- and useless as a snapshot, because it
+// changed along with the plot it came from. Anything undoing an in-place edit
+// got a picture of the state it was trying to restore.
 function serializePlots() {
   return plots.map(p => ({
     chartType: p.chartType, repeatPanelAxis: p.repeatPanelAxis, dualAxis: p.dualAxis,
-    breakLines: p.breakLines, collapseRepeats: p.collapseRepeats, yAxis: p.yAxis, style: p.style,
-    zones: p.zones, metricZone: p.metricZone,
-    metricPos: p.metricPos, included: p.included,
+    breakLines: p.breakLines, collapseRepeats: p.collapseRepeats,
+    yAxis: Object.assign({}, p.yAxis),
+    style: cloneStyle(p.style),
+    zones: cloneZones(p.zones), metricZone: p.metricZone,
+    metricPos: p.metricPos, included: cloneIncluded(p.included),
   }));
 }
 // Repairs rather than rejects, so a save written by any earlier version still loads:

@@ -200,6 +200,14 @@ function normalisePlotStyle(s) {
   };
 }
 
+function cloneStyle(st) {
+  const out = normalisePlotStyle(st);
+  out.series = {};
+  const src = (st && st.series) || {};
+  Object.keys(src).forEach(k => { out.series[k] = Object.assign({}, src[k]); });
+  return out;
+}
+
 // A stable name for one series, used as the override key.
 function seriesSignature(entry) {
   const vals = entry && entry.vals ? entry.vals : {};

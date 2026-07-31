@@ -34,10 +34,18 @@ function setEffectiveZoneList(plot, zoneKey, list) {
   plot.zones[zoneKey] = list.filter(k => k !== 'metric');
 }
 
+// Every grouping change goes through here, which makes it the one place worth
+// snapshotting: a dimension dragged into the wrong zone by accident rewrites the
+// whole chart, and until now the only way back was to remember where it came
+// from. One slot, not a stack -- the same one Load already uses.
 function moveDimToZone(plot, dimKey, zoneKey, beforeDim) {
   const isMetric = dimKey === 'metric';
   const allowed = isMetric ? METRIC_ZONE_KEYS : ZONE_KEYS;
   if (allowed.indexOf(zoneKey) === -1) return;
+
+  const fromZone = ZONE_KEYS.filter(zk => effectiveZoneList(plot, zk).indexOf(dimKey) !== -1)[0]
+    || (isMetric ? plot.metricZone : null);
+  const before = serializePlots();
 
   ZONE_KEYS.forEach(zk => {
     const list = effectiveZoneList(plot, zk);
@@ -48,6 +56,7 @@ function moveDimToZone(plot, dimKey, zoneKey, beforeDim) {
   if (isMetric && zoneKey === PANEL_ZONE.key) {
     plot.metricZone = zoneKey;
     plot.metricPos = 99;
+    announceZoneMove(dimKey, fromZone, zoneKey, before);
     return;
   }
 
@@ -59,6 +68,21 @@ function moveDimToZone(plot, dimKey, zoneKey, beforeDim) {
   }
   target.splice(at, 0, dimKey);
   setEffectiveZoneList(plot, zoneKey, target);
+  announceZoneMove(dimKey, fromZone, zoneKey, before);
+}
+
+// Only worth offering when the chip actually changed zone: reordering within one
+// zone is a nudge, and an Undo button after every nudge is noise.
+function announceZoneMove(dimKey, fromZone, zoneKey, before) {
+  if (!fromZone || fromZone === zoneKey) return;
+  const dim = DIM_BY_KEY[dimKey];
+  const zoneLabel = k => {
+    if (k === PANEL_ZONE.key) return PANEL_ZONE.label;
+    const z = ZONES.filter(o => o.key === k)[0];
+    return z ? z.label : k;
+  };
+  undoSnapshot = before;
+  setStatus('Moved ' + (dim ? dim.label : dimKey) + ' to ' + zoneLabel(zoneKey) + '.', true);
 }
 
 function renderZonesUI(container, plot, onChange) {
