@@ -86,51 +86,220 @@ function setActiveDatasetId(id) {
 
 // ---- recipe -> dataset ------------------------------------------------------
 // A recipe is everything needed to rebuild a dataset from its sources: the
-// per-column decisions, and whether several files were unioned.
+// per-column decisions, whether several files were unioned, and -- when the CSV
+// is not tidy -- how to get dimensions out of the column names and the file
+// paths.
 //
-//   { name, columns: [{source, name, role, format, agg}], sourceDim: null|string }
+//   { name,
+//     columns:   [{source, name, label, role, format, agg, labelOverride}],
+//     sourceDim: null | string,
+//     melt:      null | { pattern, fields, measure, measures },   // column names
+//     path:      null | { levels, pattern },                      // file paths
+//     custom:    [ ... ] }                                        // page-defined measures
+//
+// `melt` and `path` are optional and a recipe written before they existed has
+// neither. The loop below is written so that absent means "the degenerate case",
+// not "the old branch" -- there is one code path, and a tidy CSV takes it with
+// the reshape steps doing nothing.
+
+// A melt turns wide columns into rows: the pattern's fields become dimensions
+// that vary WITHIN a CSV row, and one of them may name the measure.
+function compileMeltPlan(spec) {
+  if (!spec || !spec.pattern) return null;
+  const pattern = compilePattern(spec.pattern);
+  if (!pattern.ok) return null;
+  const dims = (spec.fields || [])
+    .filter(f => f && f.include !== false && f.field !== PATTERN_MEASURE_FIELD)
+    .map(f => ({
+      field: f.field,
+      key: f.key || f.field,
+      label: f.label || f.key || f.field,
+      labelOverride: f.labelOverride || {},
+    }));
+  const fallback = Object.assign(
+    { value: '', key: 'value', label: 'Value', format: 'number', agg: 'mean' },
+    spec.measure || {});
+  const declared = (spec.measures || []).map(m => Object.assign(
+    { format: 'number', agg: 'mean' }, m,
+    { key: m.key || m.value, label: m.label || m.key || m.value }));
+  return { pattern, dims, fallback, declared };
+}
+
+// Path fields are constant for every row of a file: the directory levels the
+// user named, plus an optional pattern over the file's own name.
+function compilePathPlan(spec) {
+  if (!spec) return null;
+  const levels = (spec.levels || []).filter(l => l && l.key);
+  const pat = spec.pattern && spec.pattern.spec ? compilePattern(spec.pattern.spec) : null;
+  const patFields = (pat && pat.ok ? (spec.pattern.fields || []) : [])
+    .filter(f => f && f.include !== false)
+    .map(f => ({ field: f.field, key: f.key || f.field, label: f.label || f.key || f.field,
+      labelOverride: f.labelOverride || {} }));
+  if (!levels.length && !patFields.length) return null;
+  const on = (spec.pattern && spec.pattern.on) || 'stem';
+  const dims = levels.map(l => ({
+    key: l.key, label: l.label || l.key, index: l.index, labelOverride: l.labelOverride || {},
+  })).concat(patFields);
+  return {
+    dims,
+    valuesFor(path) {
+      const segs = String(path || '').split('/');
+      const out = {};
+      levels.forEach(l => { out[l.key] = segs[l.index] === undefined ? '' : segs[l.index]; });
+      if (patFields.length) {
+        const base = segs[segs.length - 1] || '';
+        const subject = on === 'path' ? String(path || '')
+          : on === 'basename' ? base
+            : base.replace(/\.[^.]+$/, '');
+        const m = matchPattern(pat, subject);
+        patFields.forEach(f => { out[f.key] = m ? (m.fields[f.field] || '') : ''; });
+      }
+      return out;
+    },
+  };
+}
+
+// Which measure a matched column lands in. An empty `measure` capture means the
+// fallback, which is what lets one pattern separate a count column from a rate
+// column: `(?<measure>MemAcc)?` fires on one and not the other.
+function meltMeasureFor(melt, matched, byValue, appended, taken) {
+  const captured = melt.pattern.hasMeasure ? (matched.fields[PATTERN_MEASURE_FIELD] || '') : '';
+  if (!captured) return { spec: melt.fallback, fallback: true };
+  let spec = byValue[captured];
+  if (!spec) {
+    // A level that was not declared at import time still imports rather than
+    // being dropped; declared ones keep their order so METRICS[0] is stable.
+    let key = captured;
+    while (taken[key]) key += '_value';
+    spec = { value: captured, key, label: captured, format: 'number', agg: 'mean' };
+    byValue[captured] = spec;
+    taken[key] = true;
+    appended.push(spec);
+  }
+  return { spec, fallback: false };
+}
 
 function datasetFromRecord(rec) {
-  const cols = rec.recipe.columns;
+  const recipe = rec.recipe;
+  const cols = recipe.columns || [];
+  const melt = compileMeltPlan(recipe.melt);
+  const pathPlan = compilePathPlan(recipe.path);
   const dims = [];
   const measures = [];
   const rows = [];
-  const dimValues = {};
 
-  cols.forEach(c => {
-    if (c.role === 'dimension') dimValues[c.name] = [];
-  });
-  if (rec.recipe.sourceDim) dimValues[rec.recipe.sourceDim] = [];
+  // Every bucket is declared from the recipe, before any file is read: creating
+  // them lazily would let whichever file happens to be first decide the order
+  // of a dimension's values.
+  const dimValues = {};
+  const need = k => (dimValues[k] || (dimValues[k] = []));
+  const seen = (k, v) => { const a = need(k); if (a.indexOf(v) === -1) a.push(v); };
+  if (recipe.sourceDim) need(recipe.sourceDim);
+  if (pathPlan) pathPlan.dims.forEach(d => need(d.key));
+  cols.forEach(c => { if (c.role === 'dimension') need(c.name); });
+  if (melt) melt.dims.forEach(d => need(d.key));
+
+  // measure bookkeeping for the melt
+  const byValue = {};
+  const appended = [];
+  const takenKeys = {};
+  if (melt) {
+    Object.keys(dimValues).forEach(k => { takenKeys[k] = true; });
+    cols.forEach(c => { if (c.role === 'measure') takenKeys[c.name] = true; });
+    melt.declared.forEach(m => { byValue[m.value] = m; takenKeys[m.key] = true; });
+  }
+  let usedFallback = false;
 
   rec.sources.forEach(srcRec => {
-    const parsed = parseCsv(srcRec.text, rec.recipe.parse);
-    const header = dedupeHeader(parsed.header);
-    parsed.rows.forEach(cells => {
-      const row = {};
-      cols.forEach(c => {
-        if (c.role === 'ignore') return;
-        const i = header.indexOf(c.source);
-        const raw = i === -1 ? '' : cells[i];
-        if (c.role === 'dimension') {
-          const v = String(raw).trim();
-          row[c.name] = v;
-          if (dimValues[c.name].indexOf(v) === -1) dimValues[c.name].push(v);
+    const parsed = parseCsv(srcRec.text, recipe.parse);
+    const raw = parsed.header;              // the melt matches these
+    const header = dedupeHeader(parsed.header);   // id columns are found by these
+    // Matching the deduped names would make a repeated wide header fail `^…$`
+    // and vanish; finding id columns by the raw names would reinstate the
+    // shadowing that dedupeHeader exists to prevent. Both halves are needed.
+
+    const constants = {};
+    if (recipe.sourceDim) constants[recipe.sourceDim] = srcRec.label || srcRec.filename;
+    if (pathPlan) {
+      const got = pathPlan.valuesFor(srcRec.path || srcRec.filename);
+      Object.keys(got).forEach(k => { constants[k] = got[k]; });
+    }
+    Object.keys(constants).forEach(k => seen(k, constants[k]));
+
+    const idIdx = cols.map(c => (c.role === 'ignore' ? -1 : header.indexOf(c.source)));
+
+    // Columns that share a dimension tuple become ONE emitted row carrying
+    // several measures. Emitting one row per column instead would make the
+    // {measure} variants collide and be averaged together.
+    const groups = [];
+    if (melt) {
+      const bySig = {};
+      for (let i = 0; i < raw.length; i++) {
+        const matched = matchPattern(melt.pattern, raw[i]);
+        if (!matched) continue;
+        const picked = meltMeasureFor(melt, matched, byValue, appended, takenKeys);
+        if (picked.fallback) usedFallback = true;
+        const vals = melt.dims.map(d => {
+          const v = matched.fields[d.field];
+          return v === undefined ? '' : v;
+        });
+        vals.forEach((v, k) => seen(melt.dims[k].key, v));
+        const sig = vals.join(' ');
+        let g = Object.prototype.hasOwnProperty.call(bySig, sig) ? bySig[sig] : null;
+        if (!g) { g = { vals, cells: [], keys: {} }; bySig[sig] = g; groups.push(g); }
+        if (g.keys[picked.spec.key]) {
+          // two columns claim the same tuple AND measure: keep them in separate
+          // rows so the collapse is averaged and counted, not silently dropped
+          groups.push({ vals, cells: [{ i, spec: picked.spec }], keys: {} });
         } else {
-          row[c.name] = isNumeric(raw) ? Number(raw) : null;
+          g.keys[picked.spec.key] = true;
+          g.cells.push({ i, spec: picked.spec });
         }
-      });
-      if (rec.recipe.sourceDim) {
-        const v = srcRec.label || srcRec.filename;
-        row[rec.recipe.sourceDim] = v;
-        if (dimValues[rec.recipe.sourceDim].indexOf(v) === -1) dimValues[rec.recipe.sourceDim].push(v);
       }
-      rows.push(row);
+    }
+
+    parsed.rows.forEach(cells => {
+      const base = {};
+      Object.keys(constants).forEach(k => { base[k] = constants[k]; });
+      for (let ci = 0; ci < cols.length; ci++) {
+        const c = cols[ci];
+        if (c.role === 'ignore') continue;
+        const cell = idIdx[ci] === -1 ? '' : cells[idIdx[ci]];
+        if (c.role === 'dimension') {
+          const v = String(cell).trim();
+          base[c.name] = v;
+          seen(c.name, v);
+        } else {
+          base[c.name] = isNumeric(cell) ? Number(cell) : null;
+        }
+      }
+      if (!melt) { rows.push(base); return; }
+      groups.forEach(g => {
+        const row = {};
+        Object.keys(base).forEach(k => { row[k] = base[k]; });
+        for (let k = 0; k < melt.dims.length; k++) row[melt.dims[k].key] = g.vals[k];
+        g.cells.forEach(cell => {
+          const v = cells[cell.i];
+          row[cell.spec.key] = isNumeric(v) ? Number(v) : null;
+        });
+        rows.push(row);
+      });
     });
   });
 
-  if (rec.recipe.sourceDim) {
-    dims.push({ key: rec.recipe.sourceDim, label: rec.recipe.sourceLabel || 'Source',
-      values: dimValues[rec.recipe.sourceDim] });
+  // Emission order is [source, path, id columns, melt]: coarsest and constant
+  // per file first (they read best as facets), row identity next, within-row
+  // variation last (finest, best as the series colour). defaultZones() takes
+  // the first as the facet and the last as the series, so the order the pattern
+  // is written in becomes the axis order.
+  if (recipe.sourceDim) {
+    dims.push({ key: recipe.sourceDim, label: recipe.sourceLabel || 'Source',
+      values: dimValues[recipe.sourceDim] });
+  }
+  if (pathPlan) {
+    pathPlan.dims.forEach(d => dims.push({
+      key: d.key, label: d.label, values: dimValues[d.key], labelOverride: d.labelOverride,
+    }));
   }
   cols.forEach(c => {
     if (c.role === 'dimension') {
@@ -139,10 +308,42 @@ function datasetFromRecord(rec) {
       measures.push({ key: c.name, label: c.label || c.name, agg: c.agg || 'mean', format: makeFormat(c.format || 'number') });
     }
   });
+  if (melt) {
+    melt.dims.forEach(d => dims.push({
+      key: d.key, label: d.label, values: dimValues[d.key], labelOverride: d.labelOverride,
+    }));
+    // The fallback goes first when it was used: with a pattern like the defbl
+    // one it holds the main measurement and the captures are the extras.
+    const meltMeasures = (usedFallback ? [melt.fallback] : [])
+      .concat(melt.declared.filter(m => m.key !== melt.fallback.key))
+      .concat(appended);
+    meltMeasures.forEach(m => measures.push({
+      key: m.key, label: m.label || m.key, agg: m.agg || 'mean', format: makeFormat(m.format || 'number'),
+    }));
+  }
 
   const ds = makeDataset({ name: rec.name, dims, measures, rows });
-  attachCustomMeasures(ds, rec.recipe.custom);
+  attachCustomMeasures(ds, recipe.custom);
   return ds;
+}
+
+// What a stored recipe will produce, without building it. The dataset cards on
+// the Data tab count dimensions and measures, and with a reshape those no
+// longer live in `columns` alone -- so both readings come from here.
+function recipeShape(recipe) {
+  const cols = (recipe && recipe.columns) || [];
+  let dimCount = cols.filter(c => c.role === 'dimension').length;
+  let measureCount = cols.filter(c => c.role === 'measure').length;
+  if (recipe && recipe.sourceDim) dimCount++;
+  const pathPlan = compilePathPlan(recipe && recipe.path);
+  if (pathPlan) dimCount += pathPlan.dims.length;
+  const melt = compileMeltPlan(recipe && recipe.melt);
+  if (melt) {
+    dimCount += melt.dims.length;
+    // the fallback may or may not be used; count declared levels, or one
+    measureCount += melt.declared.length || 1;
+  }
+  return { dims: dimCount, measures: measureCount };
 }
 
 // ---- measures the user defined on the page ---------------------------------

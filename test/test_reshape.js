@@ -137,5 +137,287 @@ console.log('\n=== 5. The preview shows values, because a match can still be wro
   w.close();
 }
 
+
+// ---- driving the rebuild directly, before any UI exists ---------------------
+// A record is { id, name, sources:[{filename, path, text}], recipe }. Building
+// one by hand is how the reshape is tested independently of the review screen.
+function build(w, sources, recipe) {
+  return JSON.parse(w.eval('(function(){'
+    + ' const ds = datasetFromRecord({ id:"t", name:"t", sources:'
+    + JSON.stringify(sources) + ', recipe:' + JSON.stringify(recipe) + ' });'
+    + ' return JSON.stringify({'
+    + '   dims: ds.dims.map(d => d.key),'
+    + '   dimLabels: ds.dims.map(d => d.label),'
+    + '   values: ds.dims.reduce((o,d) => { o[d.key] = d.values; return o; }, {}),'
+    + '   measures: ds.measures.map(m => m.key),'
+    + '   formats: ds.measures.reduce((o,m) => { o[m.key] = m.format.key; return o; }, {}),'
+    + '   nRows: ds.nRows, collapsed: ds.stats.collapsed, filled: ds.stats.filled }); })()'));
+}
+function valueAt(w, sources, recipe, ctx) {
+  return w.eval('(function(){'
+    + ' const ds = datasetFromRecord({ id:"t", name:"t", sources:'
+    + JSON.stringify(sources) + ', recipe:' + JSON.stringify(recipe) + ' });'
+    + ' return datasetValueAt(ds, ' + JSON.stringify(ctx) + '); })()');
+}
+
+const WIDE = 'app,2080c512,2080c512kbk,4070c512,4070c512kbk\n'
+  + 'A,10,11,12,13\nB,20,21,22,23\nC,30,31,32,33\n';
+const WIDE_SRC = [{ filename: 'w.csv', text: WIDE }];
+const WIDE_RECIPE = {
+  columns: [{ source: 'app', name: 'app', label: 'App', role: 'dimension' }],
+  melt: {
+    pattern: { kind: 'template', text: '{device:d}c{threads:d}{variant}' },
+    fields: [
+      { field: 'device', key: 'device', label: 'Device' },
+      { field: 'threads', key: 'threads', label: 'Threads' },
+      { field: 'variant', key: 'variant', label: 'Variant', labelOverride: { '': 'base' } },
+    ],
+    measure: { key: 'rate', label: 'Hit rate', format: 'pct' },
+  },
+};
+
+console.log('\n=== 6. Wide columns melt into rows ===');
+{
+  const { w } = boot();
+  const r = build(w, WIDE_SRC, WIDE_RECIPE);
+  ok(r.dims.join(',') === 'app,device,threads,variant',
+     'the id column comes first, then the pattern fields in written order', r.dims.join(','));
+  ok(r.measures.join(',') === 'rate', 'one measure, as named', r.measures.join(','));
+  ok(r.formats.rate === 'pct', 'in the format the recipe asked for');
+  ok(r.nRows === 12, '3 rows x 4 matched columns = 12 tuples', r.nRows);
+  ok(r.collapsed === 0, 'and nothing collapsed — every column had its own tuple', r.collapsed);
+  ok(r.values.variant.join('|') === '|kbk', 'the empty capture is a real value', r.values.variant.join('|'));
+  ok(r.values.device.join(',') === '2080,4070', 'devices came out of the names', r.values.device.join(','));
+
+  const v = valueAt(w, WIDE_SRC, WIDE_RECIPE,
+    { app: 'A', device: '4070', threads: '512', variant: 'kbk', metric: 'rate' });
+  ok(v === 13, 'and a value lands where the header said it would', v);
+  const bare = valueAt(w, WIDE_SRC, WIDE_RECIPE,
+    { app: 'C', device: '2080', threads: '512', variant: '', metric: 'rate' });
+  ok(bare === 30, 'including one from a column with no variant suffix', bare);
+  w.close();
+}
+
+console.log('\n=== 7. A {measure} capture splits the value into several measures ===');
+{
+  const { w } = boot();
+  const src = [{ filename: 'l.csv',
+    text: 'app,2080c512ratioL1,2080c512ratioL2,4070c256ratioL1,4070c256ratioL2\nA,1,2,3,4\nB,5,6,7,8\n' }];
+  const recipe = {
+    columns: [{ source: 'app', name: 'app', label: 'App', role: 'dimension' }],
+    melt: {
+      pattern: { kind: 'template', text: '{device:d}c{threads:d}ratio{measure}' },
+      fields: [{ field: 'device', key: 'device' }, { field: 'threads', key: 'threads' }],
+      measures: [{ value: 'L1', key: 'L1', format: 'number' }, { value: 'L2', key: 'L2', format: 'number' }],
+    },
+  };
+  const r = build(w, src, recipe);
+  ok(r.measures.join(',') === 'L1,L2', 'each captured level is its own measure', r.measures.join(','));
+  ok(r.dims.join(',') === 'app,device,threads', 'and it is not a dimension', r.dims.join(','));
+  ok(r.nRows === 4, 'the two levels share a row, so 2 apps x 2 tuples = 4', r.nRows);
+  ok(r.collapsed === 0, 'not 8 rows averaged down to 4', r.collapsed);
+  ok(valueAt(w, src, recipe, { app: 'A', device: '4070', threads: '256', metric: 'L2' }) === 4,
+     'and both land correctly');
+  ok(valueAt(w, src, recipe, { app: 'B', device: '2080', threads: '512', metric: 'L1' }) === 5,
+     'from either level');
+
+  // declared order decides METRICS[0], so it must not depend on iteration order
+  const flipped = JSON.parse(JSON.stringify(recipe));
+  flipped.melt.measures.reverse();
+  ok(build(w, src, flipped).measures.join(',') === 'L2,L1',
+     'the declared order is the measure order', build(w, src, flipped).measures.join(','));
+  w.close();
+}
+
+console.log('\n=== 8. The regex hatch separates mixed units in one row ===');
+{
+  const { w } = boot();
+  const src = [{ filename: 'e.csv',
+    text: 'app,defbl2080c512kbk,defbl2080c512kbkMemAcc,defbl2080c512kbki\nA,9.8,104.9,7.1\n' }];
+  const recipe = {
+    columns: [{ source: 'app', name: 'app', role: 'dimension' }],
+    melt: {
+      pattern: { kind: 'regex',
+        text: '^defbl(?<device>\\d+)c(?<threads>\\d+)(?<variant>kbki|kbk|)(?<measure>MemAcc)?$' },
+      fields: [{ field: 'device', key: 'device' }, { field: 'threads', key: 'threads' },
+        { field: 'variant', key: 'variant' }],
+      measure: { key: 'rate', label: 'Hit rate', format: 'pct' },
+      measures: [{ value: 'MemAcc', key: 'MemAcc', label: 'Accesses', format: 'count' }],
+    },
+  };
+  const r = build(w, src, recipe);
+  ok(r.measures.join(',') === 'rate,MemAcc', 'the fallback measure comes first', r.measures.join(','));
+  ok(r.formats.rate === 'pct' && r.formats.MemAcc === 'count',
+     'and they keep their own formats', JSON.stringify(r.formats));
+  ok(r.values.variant.join('|') === 'kbk|kbki',
+     'the variant is kbk, not kbkMemAcc — the count suffix was taken off it',
+     r.values.variant.join('|'));
+  ok(r.nRows === 2, 'two tuples, because the rate and the count share one', r.nRows);
+  ok(valueAt(w, src, recipe, { app: 'A', device: '2080', threads: '512', variant: 'kbk', metric: 'rate' }) === 9.8,
+     'the rate is the rate');
+  ok(valueAt(w, src, recipe, { app: 'A', device: '2080', threads: '512', variant: 'kbk', metric: 'MemAcc' }) === 104.9,
+     'and the count is the count, at the same tuple');
+  ok(valueAt(w, src, recipe, { app: 'A', device: '2080', threads: '512', variant: 'kbki', metric: 'MemAcc' }) === null,
+     'where a file has no count, there is a gap rather than a zero');
+  w.close();
+}
+
+console.log('\n=== 9. An undeclared level imports rather than being dropped ===');
+{
+  const { w } = boot();
+  const src = [{ filename: 'l.csv', text: 'app,c1ratioL1,c1ratioL3\nA,1,3\n' }];
+  const recipe = {
+    columns: [{ source: 'app', name: 'app', role: 'dimension' }],
+    melt: {
+      pattern: { kind: 'template', text: 'c{n:d}ratio{measure}' },
+      fields: [{ field: 'n', key: 'n' }],
+      measures: [{ value: 'L1', key: 'L1', format: 'pct' }],
+    },
+  };
+  const r = build(w, src, recipe);
+  ok(r.measures.join(',') === 'L1,L3', 'the undeclared level is appended after the declared one',
+     r.measures.join(','));
+  ok(r.formats.L1 === 'pct' && r.formats.L3 === 'number',
+     'the declared one keeps its format, the new one gets a plain default', JSON.stringify(r.formats));
+  ok(valueAt(w, src, recipe, { app: 'A', n: '1', metric: 'L3' }) === 3, 'and its data is there');
+  w.close();
+}
+
+console.log('\n=== 10. Repeated wide headers collapse loudly, not silently ===');
+{
+  const { w } = boot();
+  const src = [{ filename: 'd.csv', text: 'app,c1x,c1x\nA,10,20\n' }];
+  const recipe = {
+    columns: [{ source: 'app', name: 'app', role: 'dimension' }],
+    melt: {
+      pattern: { kind: 'template', text: 'c{n:d}{tag}' },
+      fields: [{ field: 'n', key: 'n' }, { field: 'tag', key: 'tag' }],
+      measure: { key: 'v', format: 'number' },
+    },
+  };
+  const r = build(w, src, recipe);
+  ok(r.nRows === 1, 'the duplicate lands on the same tuple', r.nRows);
+  ok(r.collapsed === 1, 'and is counted as a collapse rather than overwriting', r.collapsed);
+  ok(valueAt(w, src, recipe, { app: 'A', n: '1', tag: 'x', metric: 'v' }) === 15,
+     'the two are averaged, not last-write-wins');
+  w.close();
+}
+
+console.log('\n=== 11. Directory levels become dimensions ===');
+{
+  const { w } = boot();
+  const csv = 'app,rate\nA,1\nB,2\n';
+  const src = [
+    { filename: 'r.csv', path: 'eval/32x32/RTX2080/r.csv', text: csv },
+    { filename: 'r.csv', path: 'eval/32x32/RTX4070/r.csv', text: csv },
+    { filename: 'r.csv', path: 'eval/defBlock/RTX2080/r.csv', text: csv },
+  ];
+  const recipe = {
+    columns: [
+      { source: 'app', name: 'app', label: 'App', role: 'dimension' },
+      { source: 'rate', name: 'rate', label: 'Rate', role: 'measure', format: 'pct' },
+    ],
+    path: {
+      levels: [
+        { index: 0, key: null },                              // "eval" — constant, ignored
+        { index: 1, key: 'block', label: 'Block' },
+        { index: 2, key: 'device', label: 'Device' },
+      ],
+    },
+  };
+  const r = build(w, src, recipe);
+  ok(r.dims.join(',') === 'block,device,app',
+     'path dimensions come before the row ones', r.dims.join(','));
+  ok(r.dimLabels.slice(0, 2).join(',') === 'Block,Device', 'with the names given',
+     r.dimLabels.join(','));
+  ok(r.values.block.join(',') === '32x32,defBlock', 'level 1 became Block', r.values.block.join(','));
+  ok(r.values.device.join(',') === 'RTX2080,RTX4070', 'level 2 became Device', r.values.device.join(','));
+  ok(r.nRows === 6, '3 files x 2 rows, all kept apart', r.nRows);
+  ok(valueAt(w, src, recipe, { block: 'defBlock', device: 'RTX2080', app: 'B', metric: 'rate' }) === 2,
+     'and a value is reachable by its path');
+  ok(valueAt(w, src, recipe, { block: 'defBlock', device: 'RTX4070', app: 'B', metric: 'rate' }) === null,
+     'while a combination no file had is a gap');
+  w.close();
+}
+
+console.log('\n=== 12. A pattern over the file name adds more ===');
+{
+  const { w } = boot();
+  const csv = 'Config,rate\n0,1\n1,2\n';
+  const src = [
+    { filename: 'harris-corner-cc75_32B.csv', path: 'e/kbk/harris-corner-cc75_32B.csv', text: csv },
+    { filename: 'hotspot-cc89_32B.csv', path: 'e/tiled/hotspot-cc89_32B.csv', text: csv },
+  ];
+  const recipe = {
+    columns: [
+      { source: 'Config', name: 'config', label: 'Config', role: 'dimension' },
+      { source: 'rate', name: 'rate', role: 'measure', format: 'pct' },
+    ],
+    path: {
+      levels: [{ index: 0, key: null }, { index: 1, key: 'variant', label: 'Variant' }],
+      pattern: {
+        on: 'stem',
+        spec: { kind: 'template', text: '{app:*}-cc{cc:d}_32B' },
+        fields: [{ field: 'app', key: 'app', label: 'App' }, { field: 'cc', key: 'cc', label: 'CC' }],
+      },
+    },
+  };
+  const r = build(w, src, recipe);
+  ok(r.dims.join(',') === 'variant,app,cc,config',
+     'directory levels first, then the name pattern, then the row columns', r.dims.join(','));
+  ok(r.values.app.join(',') === 'harris-corner,hotspot',
+     'the greedy {app:*} stopped at the LAST -cc', r.values.app.join(','));
+  ok(r.values.cc.join(',') === '75,89', 'and the compute capability came out', r.values.cc.join(','));
+  ok(valueAt(w, src, recipe, { variant: 'tiled', app: 'hotspot', cc: '89', config: '1', metric: 'rate' }) === 2,
+     'a value is addressable by all four');
+  w.close();
+}
+
+console.log('\n=== 13. A recipe written before any of this still loads ===');
+{
+  const { w } = boot();
+  // exactly the shape the importer wrote before melt/path existed
+  const src = [{ filename: 'tidy.csv', text: 'device,size,rate\n2080,512,73.6\n4070,256,62.1\n' }];
+  const recipe = {
+    columns: [
+      { source: 'device', name: 'device', label: 'Device', role: 'dimension' },
+      { source: 'size', name: 'size', label: 'Size', role: 'dimension' },
+      { source: 'rate', name: 'rate', label: 'Rate', role: 'measure', format: 'pct', agg: 'mean' },
+    ],
+    sourceDim: null, sourceLabel: 'Source', parse: {},
+  };
+  const r = build(w, src, recipe);
+  ok(r.dims.join(',') === 'device,size', 'the dimensions are unchanged', r.dims.join(','));
+  ok(r.measures.join(',') === 'rate' && r.nRows === 2 && r.collapsed === 0,
+     'and so are the rows', r.measures + ' / ' + r.nRows + ' / ' + r.collapsed);
+  ok(valueAt(w, src, recipe, { device: '2080', size: '512', metric: 'rate' }) === 73.6,
+     'and the values');
+
+  // and with the Source dimension, which is the degenerate path dimension
+  const two = [{ filename: 'a.csv', text: 'k,v\nx,1\n', label: 'runA' },
+    { filename: 'b.csv', text: 'k,v\nx,2\n', label: 'runB' }];
+  const rec2 = {
+    columns: [{ source: 'k', name: 'k', role: 'dimension' }, { source: 'v', name: 'v', role: 'measure' }],
+    sourceDim: '__source', sourceLabel: 'Source', parse: {},
+  };
+  const r2 = build(w, two, rec2);
+  ok(r2.dims.join(',') === '__source,k', 'Source is still first', r2.dims.join(','));
+  ok(r2.values.__source.join(',') === 'runA,runB', 'and still named by the file', r2.values.__source.join(','));
+  w.close();
+}
+
+console.log('\n=== 14. recipeShape counts what the recipe will produce ===');
+{
+  const { w } = boot();
+  const shape = r => JSON.parse(w.eval('JSON.stringify(recipeShape(' + JSON.stringify(r) + '))'));
+  ok(JSON.stringify(shape(WIDE_RECIPE)) === '{"dims":4,"measures":1}',
+     'a melt contributes its fields and its measure', JSON.stringify(shape(WIDE_RECIPE)));
+  ok(JSON.stringify(shape({ columns: [{ name: 'a', role: 'dimension' }, { name: 'b', role: 'measure' }] }))
+     === '{"dims":1,"measures":1}', 'a plain recipe counts as before');
+  ok(shape({ columns: [], sourceDim: '__source', path: { levels: [{ index: 1, key: 'x' }] } }).dims === 2,
+     'Source and path levels both count');
+  w.close();
+}
+
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
 process.exit(failures === 0 ? 0 : 1);
