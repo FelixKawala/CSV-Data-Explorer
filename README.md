@@ -38,7 +38,51 @@ any column for display, and it tells you before committing how many rows will
 collapse onto how many combinations.
 
 Several files at once become either one dataset per file, or — when the headers
-match — a single dataset with a `Source` dimension naming each file.
+match — a single dataset with a `Source` dimension naming each file. **Import
+folder…** takes a whole tree.
+
+### When the CSV is not tidy
+
+Dimensions often live outside the rows: in the column names, or in the folders
+the files came from. Both can be pulled out at import, by a pattern you write
+and can see the effect of before committing.
+
+    app,2080c512,2080c512kbk,2080c512kbki,2080c256,…      33 value columns
+
+    split by   {device:d}c{threads:d}{variant}
+
+    app   device  threads  variant   value
+    A     2080    512      (empty)   38.96
+    A     2080    512      kbk       59.60
+    …
+
+`{name}` matches a word, `{name:d}` digits, `{name:*}` anything, and any other
+text matches itself. Only the last field may match nothing, which is how
+`{variant}` captures `kbk` on one column and empty on the next. Switch the
+dialect to **Regular expression** for a raw pattern with named groups when the
+template cannot express it — `^defbl(?<device>\d+)c(?<threads>\d+)(?<variant>kbki|kbk|)(?<measure>MemAcc)?$`
+splits a percentage column from a count column in the same file.
+
+Name a field `{measure}` and its text picks the measure rather than a dimension,
+so `ratio{measure}` gives you `L1` and `L2` as two measures with their own
+formats. Otherwise everything melts into one measure you name.
+
+The preview lists every column name and **what each one parsed into**, including
+the ones that did not match — those stay ordinary columns. It shows values rather
+than a tick because a pattern can match and still be wrong: `{variant}` will
+happily swallow `kbkMemAcc` whole.
+
+For folders, each directory level gets a row: name it, or leave it ignored. A
+level that is the same in every file starts ignored, since it distinguishes
+nothing. The file's own name can take a pattern too.
+
+The pattern's field order becomes the axis order — the first dimension facets and
+the last colours the series — so `{device:d}c{threads:d}{variant}` opens as a
+chart faceted by application with device × threads on the x-axis and variant as
+the series.
+
+Everything is stored as the pattern you typed, alongside the raw file, and
+replayed on load.
 
 A **comparison measure** ("Rate A, dev1 versus dev3") can be defined from the
 Builder toolbar: pick a measure, a dimension, two of its values and an
@@ -72,6 +116,7 @@ text that was typed — and recompiled on load.
     src/js/06-model     the columnar dataset and its O(#dims) lookup
     src/js/08-formula   the calculator: parse, unit inference, evaluate
     src/js/15-csv       parser and column profiling
+    src/js/16-pattern   pulling named fields out of a column name or a path
     src/js/30-store     IndexedDB, plus an in-memory store for tests
     src/js/40-import-ui the Data tab
     src/js/50..65       axis planning and the chart renderers

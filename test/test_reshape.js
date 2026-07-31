@@ -419,5 +419,340 @@ console.log('\n=== 14. recipeShape counts what the recipe will produce ===');
   w.close();
 }
 
-console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
-process.exit(failures === 0 ? 0 : 1);
+
+// ---- driving the review screen ---------------------------------------------
+const wait = ms => new Promise(r => setTimeout(r, ms));
+function dataTab(d) { d.querySelector('.mode-tab[data-mode="data"]').click(); }
+function pick(w, files, inputId) {
+  const input = w.document.getElementById(inputId || 'csv-input');
+  const list = files.map(f => {
+    const file = new w.File([f.text], f.name, { type: 'text/csv' });
+    if (f.path) Object.defineProperty(file, 'webkitRelativePath', { value: f.path, configurable: true });
+    return file;
+  });
+  Object.defineProperty(input, 'files', { value: list, configurable: true });
+  input.dispatchEvent(new w.Event('change'));
+}
+const review = d => d.querySelector('.import-review');
+const importBtn = d => Array.from(review(d).querySelectorAll('button')).find(b => b.textContent === 'Import');
+const outcome = d => d.querySelector('.import-outcome, .import-review .import-warn').textContent;
+const colRow = (d, k) => d.querySelector('.import-table tr[data-col="' + k + '"]');
+function setPattern(w, d, id, text) {
+  const inp = d.getElementById(id);
+  inp.value = text;
+  inp.dispatchEvent(new w.Event('input'));
+}
+function enable(w, d, id) {
+  const cb = d.getElementById(id);
+  cb.checked = true;
+  cb.dispatchEvent(new w.Event('change'));
+}
+const shape = w => JSON.parse(w.eval('JSON.stringify({'
+  + ' dims: DS.dims.map(d => d.key), labels: DS.dims.map(d => d.label),'
+  + ' measures: DS.measures.map(m => m.key), nRows: DS.nRows,'
+  + ' collapsed: DS.stats.collapsed })'));
+
+const WIDE_CSV = 'app,2080c512,2080c512kbk,4070c512,4070c512kbk\n'
+  + 'A,10,11,12,13\nB,20,21,22,23\nC,30,31,32,33\n';
+
+console.log('\n=== 15. The review screen splits column names ===');
+(async function () {
+  const { w, d } = boot();
+  dataTab(d);
+  pick(w, [{ name: 'wide.csv', text: WIDE_CSV }]);
+  await wait(60);
+  ok(!!review(d), 'the review opens');
+  ok(!!colRow(d, '2080c512'), 'and without a pattern every wide column is its own column');
+
+  enable(w, d, 'melt-enable');
+  await wait(20);
+  ok(!!d.getElementById('melt-pattern'), 'switching the split on offers a pattern box');
+  ok(importBtn(d).disabled, 'and blocks the import until it says something', outcome(d));
+
+  setPattern(w, d, 'melt-pattern', '{device:d}c{threads:d}{variant}');
+  await wait(220);          // the input is debounced
+  const pv = d.querySelectorAll('.melt-preview tbody tr');
+  ok(pv.length === 5, 'the preview lists every column name', pv.length);
+  ok(d.querySelector('.melt-preview tr[data-name="app"]').classList.contains('melt-miss'),
+     '"app" is shown as not matching');
+  ok(/4 of 5 names matched/.test(d.querySelector('.import-reshape .import-summary').textContent),
+     'and the count is stated', d.querySelector('.import-reshape .import-summary').textContent);
+  ok(d.querySelector('.melt-preview tr[data-name="2080c512"]').textContent.indexOf('(empty)') !== -1,
+     'an empty capture is shown as empty, not as a blank cell');
+
+  ok(!colRow(d, '2080c512'), 'the matched columns leave the column table');
+  ok(!!colRow(d, 'app'), 'the unmatched one stays');
+  ok(!!colRow(d, 'melt:device') && !!colRow(d, 'melt:threads') && !!colRow(d, 'melt:variant'),
+     'and the captured fields appear as rows of their own');
+  ok(colRow(d, 'melt:device').getAttribute('data-synthetic') === 'melt',
+     'marked as coming from the split, not from a header');
+  const emptyIn = d.getElementById('melt-empty-variant');
+  ok(!!emptyIn && emptyIn.value === 'base', 'the empty variant is pre-named rather than left blank',
+     emptyIn && emptyIn.value);
+
+  ok(!importBtn(d).disabled, 'the import is unblocked', outcome(d));
+  ok(/12 rows \(from 3 in the files\)/.test(outcome(d)),
+     'and says how many rows the split will make', outcome(d));
+
+  importBtn(d).click();
+  await wait(60);
+  const s = shape(w);
+  ok(s.dims.join(',') === 'app,device,threads,variant', 'the dataset has the four dimensions',
+     s.dims.join(','));
+  ok(s.nRows === 12 && s.collapsed === 0, 'with a row per tuple and nothing averaged away',
+     s.nRows + '/' + s.collapsed);
+  ok(w.eval('metricValueAt({app:"A",device:"4070",threads:"512",variant:"kbk",metric:"value"})') === 13,
+     'and the numbers landed where the headers said');
+  ok(w.eval('dimValueLabel("variant","")') === 'base', 'the empty variant reads as "base"');
+  ok(w.eval('JSON.stringify(defaultZones())')
+     === '{"x":["device","threads"],"series":["variant"],"facet":["app"]}',
+     'the pattern order became the axis order', w.eval('JSON.stringify(defaultZones())'));
+  ok(d.querySelectorAll('#plots rect.bar').length > 0, 'and it draws',
+     d.querySelectorAll('#plots rect.bar').length);
+  w.close();
+  await section16();
+})();
+
+async function section16() {
+  console.log('\n=== 16. A {measure} capture, and the format per measure ===');
+  const { w, d } = boot();
+  dataTab(d);
+  pick(w, [{ name: 'lv.csv', text: 'app,c512ratioL1,c512ratioL2,c256ratioL1,c256ratioL2\nA,1,2,3,4\n' }]);
+  await wait(60);
+  enable(w, d, 'melt-enable');
+  await wait(20);
+  setPattern(w, d, 'melt-pattern', 'c{threads:d}ratio{measure}');
+  await wait(220);
+  ok(!!colRow(d, 'melt:L1') && !!colRow(d, 'melt:L2'), 'each level becomes a measure row');
+  ok(!colRow(d, 'melt:measure'), 'and {measure} is not offered as a dimension');
+  ok(colRow(d, 'melt:L1').querySelectorAll('td')[2].textContent === 'Measure',
+     'its role is fixed', colRow(d, 'melt:L1').querySelectorAll('td')[2].textContent);
+
+  const fmt = colRow(d, 'melt:L2').querySelector('select');
+  fmt.value = 'pct';
+  fmt.dispatchEvent(new w.Event('change'));
+  importBtn(d).click();
+  await wait(60);
+  const s = shape(w);
+  ok(s.measures.join(',') === 'L1,L2', 'both measures arrive', s.measures.join(','));
+  ok(w.eval('METRIC_BY_KEY.L2.format.key') === 'pct'
+     && w.eval('METRIC_BY_KEY.L1.format.key') !== 'pct',
+     'and the format was set on one of them alone',
+     w.eval('METRIC_BY_KEY.L1.format.key + "/" + METRIC_BY_KEY.L2.format.key'));
+  ok(s.nRows === 2, 'the two levels share a tuple', s.nRows);
+  w.close();
+  await section17();
+}
+
+async function section17() {
+  console.log('\n=== 17. Folders become dimensions ===');
+  const { w, d } = boot();
+  dataTab(d);
+  const csv = 'app,rate\nA,1\nB,2\n';
+  pick(w, [
+    { name: 'r.csv', path: 'eval/32x32/RTX2080/r.csv', text: csv },
+    { name: 'r.csv', path: 'eval/32x32/RTX4070/r.csv', text: csv },
+    { name: 'r.csv', path: 'eval/defBlock/RTX2080/r.csv', text: csv },
+  ], 'csv-dir-input');
+  await wait(60);
+  const lv = d.querySelectorAll('.path-levels tbody tr');
+  ok(lv.length === 3, 'the three folder levels above the file are listed', lv.length);
+  ok(d.querySelector('.path-levels tr[data-level="0"]').classList.contains('col-partial'),
+     'the level every file shares is dimmed');
+  ok(d.querySelector('.path-levels tr[data-level="0"] select').value === 'ignore',
+     'and defaults to being ignored');
+  ok(d.querySelector('.path-levels tr[data-level="1"] select').value === 'dimension',
+     'while a level that varies is offered as a dimension');
+
+  d.getElementById('path-name-1').value = 'Block';
+  d.getElementById('path-name-1').dispatchEvent(new w.Event('input'));
+  d.getElementById('path-name-2').value = 'Device';
+  d.getElementById('path-name-2').dispatchEvent(new w.Event('input'));
+  await wait(220);
+  ok(!!colRow(d, 'path:block') && !!colRow(d, 'path:device'),
+     'naming them gives them keys');
+  const src = d.getElementById('add-source-dim');
+  ok(src && !src.checked, 'and the Source dimension is off, since the folders already separate them');
+
+  importBtn(d).click();
+  await wait(60);
+  const s = shape(w);
+  ok(s.dims.join(',') === 'block,device,app', 'folders come before the row dimensions', s.dims.join(','));
+  ok(s.labels.slice(0, 2).join(',') === 'Block,Device', 'with the names given', s.labels.join(','));
+  ok(s.nRows === 6, 'and every file kept its rows', s.nRows);
+  ok(w.eval('metricValueAt({block:"defBlock",device:"RTX2080",app:"B",metric:"rate"})') === 2,
+     'a value is reachable by its folder');
+  w.close();
+  await section18();
+}
+
+async function section18() {
+  console.log('\n=== 18. Guards, and what the folder picker refuses ===');
+  const { w, d } = boot();
+  dataTab(d);
+  pick(w, [{ name: 'wide.csv', text: WIDE_CSV }]);
+  await wait(60);
+  enable(w, d, 'melt-enable');
+  await wait(20);
+
+  setPattern(w, d, 'melt-pattern', 'zzz{a}');
+  await wait(220);
+  ok(importBtn(d).disabled, 'a pattern that matches nothing blocks the import');
+  ok(/matches none of the column names/.test(review(d).textContent),
+     'and says exactly that', outcome(d));
+
+  setPattern(w, d, 'melt-pattern', '{a}x{a}');
+  await wait(220);
+  ok(importBtn(d).disabled, 'so does one that will not compile');
+  ok(/used twice/.test(review(d).textContent), 'with the compiler error shown');
+
+  setPattern(w, d, 'melt-pattern', '{app:d}c{threads:d}{variant}');
+  await wait(220);
+  ok(importBtn(d).disabled, 'a field named the same as a column blocks it too');
+  ok(/both called "app"/.test(outcome(d)), 'and names the collision', outcome(d));
+  w.close();
+
+  // the folder picker only takes CSVs
+  const two = boot();
+  dataTab(two.d);
+  pick(two.w, [
+    { name: 'a.csv', path: 'f/a.csv', text: 'k,v\nx,1\n' },
+    { name: 'notes.png', path: 'f/notes.png', text: 'not a csv at all' },
+  ], 'csv-dir-input');
+  await wait(60);
+  ok(/2 files in that folder, 1 of them CSVs/.test(two.d.getElementById('data-status').textContent),
+     'a folder of mixed files is filtered, and says so',
+     two.d.getElementById('data-status').textContent);
+  ok(/1 file · 1 rows/.test(two.d.querySelector('.import-summary').textContent),
+     'only the CSV was staged', two.d.querySelector('.import-summary').textContent);
+  two.w.close();
+  await section19();
+}
+
+async function section19() {
+  console.log('\n=== 19. The reshape is stored, and replays on reload ===');
+  const { w, d } = boot();
+  dataTab(d);
+  pick(w, [{ name: 'wide.csv', text: WIDE_CSV }]);
+  await wait(60);
+  enable(w, d, 'melt-enable');
+  await wait(20);
+  setPattern(w, d, 'melt-pattern', '{device:d}c{threads:d}{variant}');
+  await wait(220);
+  importBtn(d).click();
+  await wait(60);
+
+  const recs = JSON.parse(await w.eval('STORE.list().then(r => JSON.stringify(r))'));
+  ok(recs.length === 1, 'one dataset was stored', recs.length);
+  const rec = recs[0];
+  ok(rec.recipe.melt.pattern.text === '{device:d}c{threads:d}{variant}',
+     'the recipe holds the pattern as typed', rec.recipe.melt.pattern.text);
+  ok(rec.recipe.columns.map(c => c.source).join(',') === 'app',
+     'and only the columns the split did not claim', rec.recipe.columns.map(c => c.source).join(','));
+  ok(rec.recipe.melt.fields.map(f => f.key).join(',') === 'device,threads,variant',
+     'with the captured fields', rec.recipe.melt.fields.map(f => f.key).join(','));
+  ok(rec.recipe.melt.fields[2].labelOverride[''] === 'base', 'and the empty-value label');
+  ok(rec.sources[0].text === WIDE_CSV, 'the raw file is what is stored, not the melted rows');
+
+  // reload it the way a fresh visit would
+  const back = JSON.parse(w.eval('(function(){'
+    + ' const ds = datasetFromRecord(' + JSON.stringify(rec) + ');'
+    + ' return JSON.stringify({ dims: ds.dims.map(x => x.key), nRows: ds.nRows,'
+    + '   v: datasetValueAt(ds, {app:"A",device:"4070",threads:"512",variant:"kbk",metric:"value"}) }); })()'));
+  ok(back.dims.join(',') === 'app,device,threads,variant', 'rebuilding replays the split',
+     back.dims.join(','));
+  ok(back.nRows === 12 && back.v === 13, 'down to the same value at the same tuple',
+     back.nRows + '/' + back.v);
+  w.close();
+  await section20();
+}
+
+async function section20() {
+  console.log('\n=== 20. A layout saved against other data does not empty the chart ===');
+  // Found by section 15: the autosave is written 300ms after the page settles,
+  // so importing after that restored the PREVIOUS dataset's layout, every value
+  // was filtered away as unknown, and the chart came out blank with nothing said.
+  const { w, d } = boot();
+  await wait(400);                       // let the autosave debounce fire
+  ok(!!w.localStorage.getItem('viz-builder-autosave-v1'),
+     'the fixture wrote an autosave');
+  ok(w.localStorage.getItem('viz-builder-autosave-shape-v1') === w.eval('datasetFingerprint()'),
+     'tagged with the shape it belongs to');
+
+  dataTab(d);
+  pick(w, [{ name: 'other.csv', text: 'kind,score\np,1\nq,2\n' }]);
+  await wait(60);
+  importBtn(d).click();
+  await wait(60);
+  ok(w.eval('DS.dims.map(x=>x.key).join(",")') === 'kind', 'a different dataset is imported');
+  ok(w.eval('JSON.stringify(plots[0].included.kind)') === '["p","q"]',
+     'and it shows its own values rather than nothing', w.eval('JSON.stringify(plots[0].included)'));
+  ok(d.querySelectorAll('#plots rect.bar').length === 2, 'so the chart draws',
+     d.querySelectorAll('#plots rect.bar').length);
+
+  // the repair also covers a named view loaded against data it was not saved for
+  const stale = '[{"chartType":"bars","zones":{"x":["kind"],"series":[],"facet":[]},'
+    + '"included":{"kind":["gone","missing"],"metric":["score"]}}]';
+  w.eval('applyConfig(' + stale + ')');
+  ok(w.eval('JSON.stringify(plots[0].included.kind)') === '["p","q"]',
+     'a view naming values that no longer exist falls back to the defaults',
+     w.eval('JSON.stringify(plots[0].included.kind)'));
+  ok(d.querySelectorAll('#plots rect.bar').length === 2, 'rather than drawing nothing');
+
+  // but a list the user deliberately emptied is still honoured
+  const emptied = '[{"chartType":"bars","zones":{"x":["kind"],"series":[],"facet":[]},'
+    + '"included":{"kind":[],"metric":["score"]}}]';
+  w.eval('applyConfig(' + emptied + ')');
+  ok(w.eval('JSON.stringify(plots[0].included.kind)') === '[]',
+     'an empty list that was empty when saved is left empty',
+     w.eval('JSON.stringify(plots[0].included.kind)'));
+  w.close();
+  await section21();
+}
+
+async function section21() {
+  console.log('\n=== 21. Naming a melted measure re-proposes its format ===');
+  // The format guess reads the column name, and a melted measure has no name
+  // until it is given one -- so a column of percentages arrives as a plain
+  // number until you say what it is.
+  const { w, d } = boot();
+  dataTab(d);
+  pick(w, [{ name: 'w.csv', text: 'app,2080c512,2080c512kbk\nA,38.96,59.6\nB,55.53,70.1\n' }]);
+  await wait(60);
+  enable(w, d, 'melt-enable');
+  await wait(20);
+  setPattern(w, d, 'melt-pattern', '{device:d}c{threads:d}{variant}');
+  await wait(220);
+  const fmtOf = () => colRow(d, 'melt:value').querySelector('select').value;
+  ok(fmtOf() === 'number', 'an unnamed measure is proposed as a plain number', fmtOf());
+
+  const nameIn = d.getElementById('melt-measure-value');
+  nameIn.value = 'Hit rate';
+  nameIn.dispatchEvent(new w.Event('input'));
+  await wait(220);
+  ok(fmtOf() === 'pct', 'naming it "Hit rate" re-proposes a percentage', fmtOf());
+
+  // ... but not once the format has been set by hand
+  const sel = colRow(d, 'melt:value').querySelector('select');
+  sel.value = 'fraction';
+  sel.dispatchEvent(new w.Event('change'));
+  const n2 = d.getElementById('melt-measure-value');
+  n2.value = 'Access count';
+  n2.dispatchEvent(new w.Event('input'));
+  await wait(220);
+  ok(fmtOf() === 'fraction', 'a format chosen by hand is not overwritten by a later rename', fmtOf());
+
+  sel.value = 'pct';
+  sel.dispatchEvent(new w.Event('change'));
+  importBtn(d).click();
+  await wait(60);
+  ok(w.eval('METRICS[0].label') === 'Access count', 'the name is carried through', w.eval('METRICS[0].label'));
+  ok(w.eval('METRICS[0].format.key') === 'pct', 'and so is the format');
+  ok(w.eval('metricValueAt({app:"B",device:"2080",threads:"512",variant:"kbk",metric:METRICS[0].key})') === 70.1,
+     'with the data behind it');
+  w.close();
+
+  console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
+  process.exit(failures === 0 ? 0 : 1);
+}
+

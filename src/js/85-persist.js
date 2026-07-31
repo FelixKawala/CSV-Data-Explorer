@@ -2,6 +2,8 @@
 // ---- persistence: autosave, named views, export/import ----
 const LS_AUTOSAVE_KEY = 'viz-builder-autosave-v1';
 const LS_VIEWS_KEY = 'viz-builder-views-v1';
+// A sidecar, so the autosave itself keeps exactly the format it always had.
+const LS_AUTOSAVE_SHAPE = 'viz-builder-autosave-shape-v1';
 
 function serializePlots() {
   return plots.map(p => ({
@@ -53,10 +55,16 @@ function migrateMetricZone(p) {
 function deserializePlots(cfg) {
   const list = Array.isArray(cfg) ? cfg : (cfg && Array.isArray(cfg.plots)) ? cfg.plots : [];
   return list.map(p => {
+    const zones = migrateZones(p);
     const included = {};
     DIM_KEYS.forEach(k => {
       const src = (p.included && Array.isArray(p.included[k])) ? p.included[k] : null;
-      included[k] = src ? src.filter(v => DIM_BY_KEY[k].values.indexOf(v) !== -1) : defaultIncluded(k);
+      const kept = src ? src.filter(v => DIM_BY_KEY[k].values.indexOf(v) !== -1) : null;
+      // A view that named values, none of which still exist, is not a view of
+      // this data -- it was saved against something else. Showing nothing would
+      // be an empty chart with no explanation, so fall back to the defaults.
+      // An empty list the user actually chose is kept: src was empty to begin with.
+      included[k] = kept && (kept.length || !src.length) ? kept : defaultIncluded(k);
     });
     return {
       id: plotIdSeq++,
@@ -65,7 +73,7 @@ function deserializePlots(cfg) {
       dualAxis: !!p.dualAxis,
       breakLines: p.breakLines !== false,
       collapseRepeats: p.collapseRepeats !== false,
-      zones: migrateZones(p),
+      zones,
       metricZone: migrateMetricZone(p),
       metricPos: (typeof p.metricPos === 'number' && p.metricPos >= 0) ? p.metricPos : 99,
       included,
@@ -91,17 +99,32 @@ function appendConfig(cfg) {
   if (card && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// What the autosave was written against. Restoring one dataset's layout onto
+// another produces a plot whose every value has been filtered away as unknown --
+// an empty chart with nothing to explain it -- so the autosave carries the shape
+// it belongs to and is skipped when that shape has changed.
+function datasetFingerprint() {
+  return DIM_KEYS.join(',') + '|' + METRICS.map(m => m.key).join(',');
+}
+
 let autosaveTimer = null;
 function persistPlotsDebounced() {
   clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(() => {
-    try { localStorage.setItem(LS_AUTOSAVE_KEY, JSON.stringify(serializePlots())); } catch (e) {}
+    try {
+      localStorage.setItem(LS_AUTOSAVE_KEY, JSON.stringify(serializePlots()));
+      localStorage.setItem(LS_AUTOSAVE_SHAPE, datasetFingerprint());
+    } catch (e) {}
   }, 300);
 }
 function loadAutosave() {
   try {
     const raw = localStorage.getItem(LS_AUTOSAVE_KEY);
     if (!raw) return false;
+    // An autosave written before the shape key existed has none; load it, as
+    // before -- the repair in deserializePlots still catches a mismatch.
+    const shape = localStorage.getItem(LS_AUTOSAVE_SHAPE);
+    if (shape && shape !== datasetFingerprint()) return false;
     applyConfig(JSON.parse(raw));
     return true;
   } catch (e) { return false; }

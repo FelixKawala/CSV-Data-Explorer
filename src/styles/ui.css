@@ -235,6 +235,36 @@
 .import-table .name-input { width: 100%; min-width: 90px; }
 .import-actions { display: flex; gap: 8px; margin-top: 12px; }
 .import-table tr.col-partial td { opacity: .7; }
+.import-table tr[data-synthetic] .col-source { color: var(--series-base); }
+.import-table .role-badge { font-size: 11px; color: var(--text-muted); }
+.import-table .empty-label { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; }
+.import-table .empty-label .name-input { width: 74px; min-width: 0; }
+
+/* reshape: pulling dimensions out of column names and file paths */
+.import-reshape, .import-path {
+  margin: 12px 0; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--page);
+}
+.reshape-row { display: flex; align-items: center; gap: 8px; margin: 8px 0 6px; flex-wrap: wrap; }
+.pattern-input {
+  flex: 1 1 300px; min-width: 200px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px; padding: 5px 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface-1); color: var(--text-primary);
+}
+.pattern-input:focus { outline: 2px solid var(--series-base); outline-offset: -1px; }
+.melt-preview, .path-levels { border-collapse: collapse; width: 100%; font-size: 11.5px; margin-top: 6px; }
+.melt-preview th, .path-levels th {
+  text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .03em;
+  color: var(--text-muted); font-weight: 600; padding: 3px 8px 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.melt-preview td, .path-levels td { padding: 2px 8px 2px 0; border-bottom: 1px solid var(--grid); }
+.melt-preview .col-source, .path-levels .col-source { font-family: ui-monospace, Menlo, monospace; }
+.melt-preview tr.melt-miss td { color: var(--text-muted); opacity: .65; }
+.path-levels tr.col-partial td { opacity: .7; }
+.path-levels .name-input { width: 100%; min-width: 80px; }
 .preset-group { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; }
 .preset-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 .derive-holder { flex-basis: 100%; }
