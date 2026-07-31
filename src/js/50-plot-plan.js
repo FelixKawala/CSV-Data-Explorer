@@ -247,6 +247,9 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     dataTable: {
       xDims: xD, seriesDims: sDims, kind: kindInfo.kind, chartType: plot.chartType,
       seriesLabels: sVals.map(sv => sv.label),
+      // so a pgfplots figure carries the same appearance as the chart on screen
+      seriesStyles: sVals.map(sv => ({ color: sv.color, shape: sv.shape, pattern: sv.pattern })),
+      yAxis: plot.yAxis, markers: style.markers,
       rows: xVals.map(xv => ({
         label: xv.label,
         parts: xv.labels.slice(),

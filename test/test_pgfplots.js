@@ -90,7 +90,9 @@ console.log('\n=== 4. pgfplots + CSV is offered alongside the standalone TikZ ==
   ok(/\\pgfplotstableread\[col sep=comma\]\{[\w-]+\.csv\}/.test(pgf), 'it reads the csv by name');
   ok(new RegExp('\\{' + names.find(n => /\.csv$/.test(n)).replace('.', '\\.') + '\\}').test(pgf),
      'and the name matches the file actually offered');
-  ok((pgf.match(/\\addplot table /g) || []).length === 3, 'one addplot per series', (pgf.match(/\\addplot table /g) || []).length);
+  // \addplot now carries per-series options (colour, mark, pattern) before `table`
+  const plots = pgf.match(/\\addplot(\[[^\]]*\] )? table /g) || [];
+  ok(plots.length === 3, 'one addplot per series', plots.length);
   ok(/\\addlegendentry\{Base\}/.test(pgf), 'with legend entries');
   ok(/xticklabels from table=/.test(pgf), 'tick labels come from the data, not hardcoded');
 

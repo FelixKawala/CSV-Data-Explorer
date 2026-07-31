@@ -35,8 +35,12 @@ function inlineComputedStyles(srcEl, dstEl, win) {
   const cs = win.getComputedStyle(srcEl);
   IMG_STYLE_PROPS.forEach(prop => {
     if (prop === 'fill' || prop === 'stroke') {
-      const hex = hexPaint(srcEl, win, prop, cs[prop === 'fill' ? 'fill' : 'stroke']);
       const attr = srcEl.getAttribute(prop);
+      // A paint that points at a <pattern> is not a colour and must be carried
+      // through untouched. Resolving it would find no colour, fall back to the
+      // computed value, and paint a flat rect over every textured bar.
+      if (attr && attr.indexOf('url(') === 0) { dstEl.setAttribute(prop, attr); return; }
+      const hex = hexPaint(srcEl, win, prop, cs[prop === 'fill' ? 'fill' : 'stroke']);
       if (hex) dstEl.setAttribute(prop, hex);
       else if (attr === 'none' || cs[prop] === 'none') dstEl.setAttribute(prop, 'none');
       return;
@@ -72,9 +76,19 @@ function legendToSvg(legendEl, win, doc, width, y0) {
       .filter(sp => !sp.classList.contains('swatch'))
       .map(sp => sp.textContent).join(' ').trim() || item.textContent.trim();
     if (!text) continue;
-    const est = 6 + (sw ? 14 : 0) + text.length * 5.4;
+    const est = 6 + (sw || item.querySelector('.swatch-svg') ? 14 : 0) + text.length * 5.4;
     if (x > 0 && x + est > width) { x = 0; y += 14; }
-    if (sw) {
+    const drawn = item.querySelector('.swatch-svg');
+    if (drawn) {
+      // The key is a shape or a texture. Lift the mini-SVG in whole, styles
+      // inlined like anything else, so the exported key matches the chart.
+      const key = cloneWithStyles(drawn, win);
+      const holder = doc.createElementNS(SVGNS, 'g');
+      holder.setAttribute('transform', 'translate(' + x + ',' + (y - 11) + ')');
+      while (key.firstChild) holder.appendChild(key.firstChild);
+      g.appendChild(holder);
+      x += 13;
+    } else if (sw) {
       const col = rgbToHex(resolveVar(sw, win, sw.style.background || sw.style.backgroundColor))
         || rgbToHex(win.getComputedStyle(sw).backgroundColor);
       if (col) {

@@ -102,7 +102,7 @@ function addTikzButton(host, getRoot, label, name, cls) {
     if (!tex) { setStatus('Nothing to export here yet.', false); return; }
     const base = slugify(name);
     const parts = [{ name: base + '.tex', text: tex }];
-    const pgf = buildPgfplotsDocument(root, name, base);
+    const pgf = buildPgfplotsDocument(root, name, base, window);
     if (pgf) {
       if (pgf.tex) parts.push({ name: base + '-pgfplots.tex', text: pgf.tex });
       pgf.files.forEach(f => parts.push(f));

@@ -5,6 +5,18 @@
 // getComputedStyle, which resolves the CSS custom properties for us.
 
 const TIKZ_COLORS = {};   // hex -> macro name, per export
+// Our textures, named as the tikz patterns library knows them. Anything without
+// a counterpart there is left solid rather than approximated with the wrong one.
+const TIKZ_PATTERNS = {
+  diagonal: 'north east lines',
+  backdiagonal: 'north west lines',
+  crosshatch: 'crosshatch',
+  dots: 'dots',
+  grid: 'grid',
+  horizontal: 'horizontal lines',
+  vertical: 'vertical lines',
+};
+const tikzPatternsUsed = {};
 let tikzColorSeq = 0;
 
 function rgbToHex(str) {
@@ -95,6 +107,62 @@ function resolvePaint(node, win, attr, computed) {
   return null;
 }
 
+// Re-draw one legend key at (cx, cy) in the picture's coordinates. The swatch is
+// a 14x14 mini-SVG holding either a marker (centred at 7,7) or a pair of rects,
+// so it is re-emitted rather than walked: two shapes, no general machinery.
+function swatchToTikz(swSvg, win, cx, cy) {
+  const out = [];
+  const mark = swSvg.querySelector('.swatch-mark');
+  if (mark) {
+    const col = resolvePaint(mark, win, 'fill', win.getComputedStyle(mark).fill);
+    if (!col) return out;
+    const r = 4;
+    const pts = markPoints(mark.getAttribute('data-shape'));
+    if (!pts) {
+      out.push('  \\path[fill=' + col + '] (' + n2(cx + 4.5) + ',' + n2(cy)
+        + ') circle[radius=' + n2(r) + 'pt];');
+    } else {
+      out.push('  \\fill[' + col + '] '
+        + pts.map(pt => '(' + n2(cx + 4.5 + pt[0] * r) + ',' + n2(cy + pt[1] * r) + ')').join(' -- ')
+        + ' -- cycle;');
+    }
+    return out;
+  }
+  const rects = swSvg.querySelectorAll('rect');
+  if (!rects.length) return out;
+  const base = resolvePaint(rects[0], win, 'fill', null);
+  if (base) {
+    out.push('  \\fill[' + base + ', rounded corners=1pt] (' + n2(cx) + ',' + n2(cy - 4)
+      + ') rectangle (' + n2(cx + 9) + ',' + n2(cy + 4) + ');');
+  }
+  const texRect = swSvg.querySelector('rect[fill^="url("]');
+  const patKey = texRect && swSvg.querySelector('pattern') ? legendPatternKey(swSvg) : null;
+  if (patKey && TIKZ_PATTERNS[patKey]) {
+    tikzPatternsUsed[patKey] = true;
+    const ink = tikzColor(resolveVar(swSvg, win, 'var(--text-primary)')) || tikzColor('rgb(0,0,0)');
+    out.push('  \\fill[pattern=' + TIKZ_PATTERNS[patKey] + ', pattern color=' + ink
+      + ', rounded corners=1pt] (' + n2(cx) + ',' + n2(cy - 4)
+      + ') rectangle (' + n2(cx + 9) + ',' + n2(cy + 4) + ');');
+  }
+  return out;
+}
+// The swatch carries the pattern by reference; the name comes off the chart's
+// own texture rects, matched by the url the swatch points at.
+function legendPatternKey(swSvg) {
+  const shell = swSvg.closest && swSvg.closest('.leaf-shell, .facet-card, .metric-panel, .plot-render');
+  const host = shell || (swSvg.ownerDocument && swSvg.ownerDocument.body);
+  if (!host) return null;
+  const idx = Array.prototype.indexOf.call(
+    swSvg.parentNode.parentNode.querySelectorAll('.swatch-svg'), swSvg);
+  const tex = host.querySelectorAll ? host.querySelectorAll('.bar-texture') : [];
+  const seen = [];
+  for (let i = 0; i < tex.length; i++) {
+    const k = tex[i].getAttribute('data-pattern');
+    if (k && seen.indexOf(k) === -1) seen.push(k);
+  }
+  return seen[idx] || seen[0] || null;
+}
+
 // The legend is HTML next to the chart, so it would otherwise be lost. Draw it into
 // the picture underneath the plot: a figure without its key is not a figure.
 function legendToTikz(legendEl, win, y0, width) {
@@ -109,9 +177,15 @@ function legendToTikz(legendEl, win, y0, width) {
       .filter(sp => !sp.classList.contains('swatch'))
       .map(sp => sp.textContent).join(' ').trim() || item.textContent.trim();
     if (!text) continue;
-    const est = 6 + (sw ? 14 : 0) + text.length * 5.2;
+    const drawn = item.querySelector('.swatch-svg');
+    const est = 6 + (sw || drawn ? 14 : 0) + text.length * 5.2;
     if (x > 0 && x + est > width) { x = 0; y += rowH; }
-    if (sw) {
+    if (drawn) {
+      // The key is a drawn shape or a texture, not a colour square, and the
+      // export has to say the same thing the chart does.
+      out.push.apply(out, swatchToTikz(drawn, win, x, y - 3));
+      x += 13;
+    } else if (sw) {
       const col = tikzColor(resolveVar(sw, win, sw.style.background || sw.style.backgroundColor))
         || tikzColor(win.getComputedStyle(sw).backgroundColor);
       if (col) {
@@ -146,10 +220,26 @@ function svgToTikz(svg, win) {
       const style = cs(c);
       const num = a => parseFloat(c.getAttribute(a));
       if (tag === 'rect') {
-        const fill = resolvePaint(c, win, 'fill', style.fill);
-        if (!fill) continue;
         const x = dx + num('x'), y = dy + num('y'), w = num('width'), h = num('height');
         const rx = parseFloat(c.getAttribute('rx') || 0);
+        const patName = c.getAttribute('data-pattern');
+        if (patName) {
+          // The texture overlay: its fill is a url(#id) that means nothing to
+          // TikZ, so it is re-expressed as one of tikz's own patterns over the
+          // solid rect that was already emitted underneath it.
+          const tp = TIKZ_PATTERNS[patName];
+          if (!tp) continue;
+          tikzPatternsUsed[patName] = true;
+          const ink = resolvePaint(c, win, 'fill', null)
+            || tikzColor(resolveVar(c, win, 'var(--text-primary)')) || tikzColor('rgb(0,0,0)');
+          const opts = ['pattern=' + tp, 'pattern color=' + ink]
+            .concat(rx ? ['rounded corners=' + n2(rx) + 'pt'] : []);
+          out.push('  \\fill[' + opts.join(', ') + '] (' + n2(x) + ',' + n2(y) + ') rectangle ('
+            + n2(x + w) + ',' + n2(y + h) + ');');
+          continue;
+        }
+        const fill = resolvePaint(c, win, 'fill', style.fill);
+        if (!fill) continue;
         const opts = [fill].concat(rx ? ['rounded corners=' + n2(rx) + 'pt'] : []);
         out.push('  \\fill[' + opts.join(', ') + '] (' + n2(x) + ',' + n2(y) + ') rectangle ('
           + n2(x + w) + ',' + n2(y + h) + ');');
@@ -161,6 +251,17 @@ function svgToTikz(svg, win) {
         if (stroke) opts.push('draw=' + stroke, 'line width=' + n2(parseFloat(style.strokeWidth) || 1) + 'pt');
         out.push('  \\path[' + opts.join(', ') + '] (' + n2(dx + num('cx')) + ',' + n2(dy + num('cy'))
           + ') circle[radius=' + n2(num('r')) + 'pt];');
+      } else if (tag === 'polygon') {
+        // marker shapes. A closed filled path -- which is why every shape is
+        // built out of polygons rather than <path> in the first place.
+        const fill = resolvePaint(c, win, 'fill', style.fill);
+        if (!fill) continue;
+        const pts = (c.getAttribute('points') || '').trim().split(/\s+/).map(p => {
+          const xy = p.split(',');
+          return '(' + n2(dx + parseFloat(xy[0])) + ',' + n2(dy + parseFloat(xy[1])) + ')';
+        });
+        if (pts.length < 3) continue;
+        out.push('  \\fill[' + fill + '] ' + pts.join(' -- ') + ' -- cycle;');
       } else if (tag === 'line') {
         const stroke = resolvePaint(c, win, 'stroke', style.stroke);
         if (!stroke) continue;
@@ -282,6 +383,7 @@ function fitAdvice(w) {
 
 function buildTikzDocument(root, win, title) {
   for (const k in TIKZ_COLORS) delete TIKZ_COLORS[k];
+  for (const k in tikzPatternsUsed) delete tikzPatternsUsed[k];
   tikzColorSeq = 0;
 
   const figures = [];
@@ -310,7 +412,10 @@ function buildTikzDocument(root, win, title) {
   const out = [];
   out.push('% ' + title);
   out.push('% Generated by the data explorer.');
-  out.push('% Requires: \\usepackage{tikz}' + (figures.some(f => f.kind === 'table') ? ', \\usepackage{booktabs}' : ''));
+  const needsPatterns = Object.keys(tikzPatternsUsed).length > 0;
+  out.push('% Requires: \\usepackage{tikz}'
+    + (figures.some(f => f.kind === 'table') ? ', \\usepackage{booktabs}' : '')
+    + (needsPatterns ? ', \\usetikzlibrary{patterns}' : ''));
   out.push('% Coordinates are in points with the y axis flipped, so the figure matches the');
   out.push('% on-screen layout exactly. Each figure below is preceded by its natural size');
   out.push('% and what to do if it does not fit the page.');
