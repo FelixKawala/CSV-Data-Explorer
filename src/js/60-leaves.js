@@ -14,7 +14,7 @@ function renderBarLeaf(container, spec) {
 
   const all = [];
   xVals.forEach(xv => sVals.forEach(sv => all.push(getValue(sv, xv))));
-  const sc = makeYScale(kind, all, plotH);
+  const sc = makeYScale(kind, all, plotH, spec.yAxis);
 
   const w = lay.plotW + marginL + marginR, h = plotH + marginT + marginB;
   const svg = el('svg', { viewBox: '0 0 ' + w + ' ' + h });
@@ -27,7 +27,7 @@ function renderBarLeaf(container, spec) {
       const val = getValue(sv, xv);
       if (val === null || val === undefined) return;
       const bx = lay.gxs[gi] + inset + vi * (lay.unitW + lay.gap);
-      const barY = sc.y(val);
+      const barY = sc.clamp(sc.y(val));
       const barTop = Math.min(barY, sc.zeroY);
       const barH = Math.max(Math.abs(barY - sc.zeroY), 1);
       const rect = el('rect', {
@@ -44,6 +44,7 @@ function renderBarLeaf(container, spec) {
   drawXAxis(plotG, xVals, xDims, lay, plotH, showX);
 
   scrollWrap(container, svg, w, h, spec);
+  axisNotes(container, sc, all);
   if (spec.showLegend !== false) {
     if (signColoured) polarityLegend(container);
     else seriesLegend(container, sVals, spec.seriesDims);
@@ -74,7 +75,7 @@ function renderLineLeaf(container, spec) {
 
   const all = [];
   xVals.forEach(xv => sVals.forEach(sv => all.push(getValue(sv, xv))));
-  const sc = makeYScale(kind, all, plotH);
+  const sc = makeYScale(kind, all, plotH, spec.yAxis);
 
   const w = lay.plotW + marginL + marginR, h = plotH + marginT + marginB;
   const svg = el('svg', { viewBox: '0 0 ' + w + ' ' + h });
@@ -85,6 +86,7 @@ function renderLineLeaf(container, spec) {
   drawXAxis(plotG, xVals, xDims, lay, plotH, showX);
 
   scrollWrap(container, svg, w, h, spec);
+  axisNotes(container, sc, all);
   if (spec.showLegend !== false) seriesLegend(container, sVals, spec.seriesDims);
 }
 
@@ -108,7 +110,7 @@ function drawSeriesLines(plotG, sVals, xVals, lay, sc, getValue, kind, dashed, b
       if (breaks && gi > 0 && breaks[gi]) flush();
       const val = getValue(sv, xv);
       if (val === null || val === undefined) { flush(); return; }
-      const px = cx(gi), py = sc.y(val);
+      const px = cx(gi), py = sc.clamp(sc.y(val));
       run.push([px, py]);
       const dot = el('circle', { class: 'series-dot', cx: px, cy: py, r: 3.5, fill: sv.color }, plotG);
       dot.addEventListener('mousemove', e => showTip(e, [
@@ -147,7 +149,7 @@ function renderDualAxisLeaf(container, spec, asLines) {
     primary.forEach(sv => primVals.push(getValue(sv, xv)));
     secondary.forEach(sv => secVals.push(getValue(sv, xv)));
   });
-  const scL = makeYScale(primaryKind, primVals, plotH);
+  const scL = makeYScale(primaryKind, primVals, plotH, spec.yAxis);
   const scR = makeYScale(secondaryKind, secVals, plotH);
 
   const w = lay.plotW + marginL + marginR, h = plotH + marginT + marginB;

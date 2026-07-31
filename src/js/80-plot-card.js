@@ -40,6 +40,63 @@ function renderPlotCard(plot) {
     lab3.appendChild(cb3);
     html('span', null, lab3).textContent = 'break lines per group';
   }
+  // ---- y-axis: scale and bounds -------------------------------------------
+  // Only where there is a y-axis to speak of; a matrix and a table have none.
+  if (plot.chartType !== 'matrix' && plot.chartType !== 'table') {
+    const ax = plot.yAxis || (plot.yAxis = { min: null, max: null, scale: 'auto' });
+    const grp = html('span', 'yaxis-group', head);
+    html('span', 'yaxis-label', grp).textContent = 'Y';
+
+    const scaleSel = document.createElement('select');
+    scaleSel.className = 'yaxis-scale';
+    [['auto', 'auto'], ['linear', 'linear'], ['log', 'log']].forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o[0]; opt.textContent = o[1];
+      scaleSel.appendChild(opt);
+    });
+    scaleSel.value = ax.scale || 'auto';
+    scaleSel.title = 'auto follows the measure: log for counts, linear for rates and changes.';
+    scaleSel.addEventListener('change', () => {
+      ax.scale = scaleSel.value; rerender(); persistPlotsDebounced();
+    });
+    grp.appendChild(scaleSel);
+
+    // An empty box means auto. Typing a number is a claim about the window you
+    // want; it is used exactly as written, not padded.
+    const bound = (which, placeholder) => {
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.className = 'yaxis-bound';
+      inp.placeholder = placeholder;
+      inp.value = ax[which] === null || ax[which] === undefined ? '' : String(ax[which]);
+      inp.title = 'Leave empty to fit the data.';
+      inp.addEventListener('change', () => {
+        const raw = inp.value.trim();
+        const n = Number(raw);
+        ax[which] = (raw === '' || !isFinite(n)) ? null : n;
+        rerender(); persistPlotsDebounced();
+      });
+      grp.appendChild(inp);
+      return inp;
+    };
+    bound('min', 'min');
+    bound('max', 'max');
+
+    if (ax.min !== null || ax.max !== null || ax.scale !== 'auto') {
+      const reset = document.createElement('button');
+      reset.type = 'button'; reset.className = 'btn small'; reset.textContent = 'auto';
+      reset.title = 'Back to fitting the data';
+      reset.addEventListener('click', () => {
+        plot.yAxis = { min: null, max: null, scale: 'auto' };
+        rerender(); persistPlotsDebounced();
+      });
+      grp.appendChild(reset);
+    }
+    if (plot.dualAxis) {
+      html('span', 'radio-hint', grp).textContent = '(left axis; the right one fits its own data)';
+    }
+  }
+
   if (headPlan.dualEligible) {
     const lab2 = html('label', 'head-toggle', head);
     const cb2 = document.createElement('input');

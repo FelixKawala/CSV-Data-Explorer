@@ -97,12 +97,31 @@ function drawXAxis(plotG, xVals, xDims, lay, plotH, showX) {
   }
 }
 
+// Anything the scale had to compromise on, said on the chart rather than
+// silently absorbed: a log axis that could not start where it was told, values
+// that fall outside a hand-set range.
+function axisNotes(container, sc, values) {
+  const msgs = (sc.notes || []).slice();
+  let off = 0;
+  if (sc.outside) values.forEach(v => { if (sc.outside(v)) off++; });
+  if (off) {
+    msgs.push(off + ' value' + (off === 1 ? '' : 's') + ' outside the axis range, drawn clipped');
+  }
+  if (msgs.length) html('div', 'chart-note', container).textContent = msgs.join(' · ');
+}
+
 // Linear for percentages and changes, logarithmic for access counts. The linear
 // domain always contains zero and expands downwards when the data goes negative,
 // so a delta series is drawn against a real zero line instead of falling off the
 // bottom of the frame.
-function makeYScale(kind, values, plotH) {
-  const isLog = useLog(kind);
+//
+// `axis` overrides that: { min, max, scale } where null and 'auto' mean "as
+// derived above". An explicit bound is used exactly as given -- padding a number
+// the user typed would defeat the point of typing it.
+function makeYScale(kind, values, plotH, axis) {
+  const ax = axis || {};
+  const isLog = ax.scale === 'log' ? true : ax.scale === 'linear' ? false : useLog(kind);
+  const notes = [];
   let maxVal = -Infinity, minVal = Infinity, minPos = Infinity;
   values.forEach(v => {
     if (v === null || v === undefined) return;
@@ -114,8 +133,23 @@ function makeYScale(kind, values, plotH) {
   if (!isFinite(minPos)) minPos = 1;
 
   if (isLog) {
-    const logMin = Math.pow(10, Math.floor(Math.log10(minPos)));
-    const scaleMax = Math.pow(10, Math.ceil(Math.log10(Math.max(maxVal, minPos))));
+    // A log axis has no room for zero or anything below it. Rather than emit
+    // NaN coordinates, fall back to the smallest positive value and say so.
+    let lowBound = minPos;
+    if (ax.min !== null && ax.min !== undefined) {
+      if (ax.min > 0) lowBound = ax.min;
+      else notes.push('a log axis cannot start at ' + ax.min + '; started at ' + fmtAccess(minPos));
+    }
+    let highBound = Math.max(maxVal, lowBound);
+    if (ax.max !== null && ax.max !== undefined) {
+      if (ax.max > lowBound) highBound = ax.max;
+      else notes.push('the maximum must be above the minimum on a log axis');
+    }
+    if (ax.scale === 'log' && !useLog(kind) && minVal <= 0) {
+      notes.push('values at or below zero cannot be drawn on a log axis');
+    }
+    const logMin = Math.pow(10, Math.floor(Math.log10(lowBound)));
+    const scaleMax = Math.pow(10, Math.ceil(Math.log10(highBound)));
     const span = Math.log10(scaleMax) - Math.log10(logMin) || 1;
     const y = v => {
       if (v === null || v === undefined) return null;
@@ -123,7 +157,10 @@ function makeYScale(kind, values, plotH) {
       return plotH - ((Math.log10(v) - Math.log10(logMin)) / span) * plotH;
     };
     const ticks = Array.from({ length: Math.round(span) + 1 }, (_, i) => logMin * Math.pow(10, i));
-    return { y: y, ticks: ticks, useLog: true, zeroY: plotH, hasNegative: false, tickLabel: fmtAccess };
+    return { y: y, ticks: ticks, useLog: true, zeroY: plotH, hasNegative: false,
+      tickLabel: fmtAccess, notes: notes,
+      clamp: p => Math.max(0, Math.min(plotH, p)),
+      outside: v => (v !== null && v !== undefined && (v < logMin || v > scaleMax)) };
   }
 
   let hi = Math.max(maxVal, 0), lo = Math.min(minVal, 0);
@@ -131,11 +168,24 @@ function makeYScale(kind, values, plotH) {
   const pad = (hi - lo) * 0.15;
   if (maxVal > 0) hi += pad;
   if (minVal < 0) lo -= pad;
+  if (ax.min !== null && ax.min !== undefined) lo = ax.min;
+  if (ax.max !== null && ax.max !== undefined) hi = ax.max;
+  if (hi <= lo) { notes.push('the maximum must be above the minimum'); hi = lo + 1; }
   const span = (hi - lo) || 1;
   const y = v => (v === null || v === undefined) ? null : plotH - ((v - lo) / span) * plotH;
-  const ticks = lo < 0 ? [lo, 0, hi] : [0, (lo + hi) / 2, hi];
+  // Zero only earns a tick when it is inside the domain. A hand-set minimum
+  // above zero used to put a tick, and the bar baseline, off the bottom.
+  const ticks = (lo < 0 && hi > 0) ? [lo, 0, hi] : [lo, (lo + hi) / 2, hi];
   return {
-    y: y, ticks: ticks, useLog: false, zeroY: y(0), hasNegative: lo < 0,
+    y: y, ticks: ticks, useLog: false,
+    zeroY: Math.max(0, Math.min(plotH, y(0))),
+    hasNegative: lo < 0,
     tickLabel: t => tickLabel(kind, t),
+    notes: notes,
+    // An explicit range is a window on the data, so anything outside it is
+    // drawn clipped to the frame rather than off it -- and counted, so the
+    // chart can say how much it is not showing.
+    clamp: p => Math.max(0, Math.min(plotH, p)),
+    outside: v => (v !== null && v !== undefined && (v < lo || v > hi)),
   };
 }

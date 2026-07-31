@@ -218,6 +218,7 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     series: sVals, x: xVals, xDims: xD, seriesDims: sDims,
     lineBreaks: lineBreaks,
     getValue: getValue, kind: kindInfo.kind,
+    yAxis: plot.yAxis,
     slots: opts.slots,
     collapseRepeats: plot.collapseRepeats !== false,
     fixedCtx: fixed,

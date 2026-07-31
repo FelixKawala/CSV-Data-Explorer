@@ -68,6 +68,8 @@ function makeDefaultPlot() {
     chartType: 'bars',
     repeatPanelAxis: false,
     dualAxis: false,
+    // null and 'auto' mean "derive it from the data", exactly as before
+    yAxis: { min: null, max: null, scale: 'auto' },
     breakLines: true,
     collapseRepeats: true,
     zones,
@@ -94,6 +96,7 @@ function clonePlot(p) {
     dualAxis: p.dualAxis,
     breakLines: p.breakLines,
     collapseRepeats: p.collapseRepeats,
+    yAxis: Object.assign({ min: null, max: null, scale: 'auto' }, p.yAxis),
     zones: cloneZones(p.zones),
     metricZone: p.metricZone,
     metricPos: p.metricPos,

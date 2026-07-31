@@ -8,7 +8,7 @@ const LS_AUTOSAVE_SHAPE = 'viz-builder-autosave-shape-v1';
 function serializePlots() {
   return plots.map(p => ({
     chartType: p.chartType, repeatPanelAxis: p.repeatPanelAxis, dualAxis: p.dualAxis,
-    breakLines: p.breakLines, collapseRepeats: p.collapseRepeats,
+    breakLines: p.breakLines, collapseRepeats: p.collapseRepeats, yAxis: p.yAxis,
     zones: p.zones, metricZone: p.metricZone,
     metricPos: p.metricPos, included: p.included,
   }));
@@ -47,6 +47,13 @@ function migrateZones(p) {
   }
   return out;
 }
+// A saved view from before the axis could be overridden has no yAxis at all,
+// which must read as "auto" rather than as a broken record.
+function normaliseYAxis(a) {
+  const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+  const scale = a && (a.scale === 'linear' || a.scale === 'log') ? a.scale : 'auto';
+  return { min: num(a && a.min), max: num(a && a.max), scale: scale };
+}
 function migrateMetricZone(p) {
   if (p && METRIC_ZONE_KEYS.indexOf(p.metricZone) !== -1) return p.metricZone;
   if (p && p.metricAxisRole === 'secondary') return 'x';
@@ -73,6 +80,7 @@ function deserializePlots(cfg) {
       dualAxis: !!p.dualAxis,
       breakLines: p.breakLines !== false,
       collapseRepeats: p.collapseRepeats !== false,
+      yAxis: normaliseYAxis(p.yAxis),
       zones,
       metricZone: migrateMetricZone(p),
       metricPos: (typeof p.metricPos === 'number' && p.metricPos >= 0) ? p.metricPos : 99,
