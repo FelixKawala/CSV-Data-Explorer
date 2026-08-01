@@ -113,7 +113,95 @@ function seriesSlotsFor(plot, axes, metricKey) {
   return n;
 }
 
+// ---- metric groups ---------------------------------------------------------
+// A divider dropped into the "Data shown" list splits the metrics into groups.
+// A group is a band on the x-axis when everything shares one scale, and a chart
+// of its own when it does not -- because a percentage and a raw count have no
+// axis in common, and one of them would be a flat line against the other.
+const MGROUP_DIM = '__mgroup';
+
+function metricGroupsOf(plot) {
+  const shown = plot.included[MEASURE_DIM] || [];
+  const breaks = plot.metricBreaks || [];
+  if (!breaks.length || shown.length < 2) return null;
+  const groups = [];
+  let cur = [];
+  shown.forEach(mk => {
+    cur.push(mk);
+    if (breaks.indexOf(mk) !== -1) { groups.push(cur); cur = []; }
+  });
+  if (cur.length) groups.push(cur);
+  return groups.length > 1 ? groups : null;
+}
+
+// What the band says. Naming a group by its shared scale reads well -- until two
+// groups share one, and then both bands are called "rate %", the axis code sees
+// one value, and they merge into a single band that silently says the split did
+// not happen. The metrics themselves are always distinct, so they are the name.
+function metricGroupLabel(group) {
+  const names = group.map(mk => (METRIC_BY_KEY[mk] ? METRIC_BY_KEY[mk].label : mk));
+  if (names.length <= 3) return names.join(' / ');
+  return names.slice(0, 2).join(' / ') + ' +' + (names.length - 2) + ' more';
+}
+
+function metricGroupsShareScale(groups) {
+  const fmts = [];
+  groups.forEach(g => g.forEach(mk => {
+    const m = METRIC_BY_KEY[mk];
+    if (m) fmts.push(m.format);
+  }));
+  return fmts.length > 0 && fmts.every(f => sameAxis(f, fmts[0]));
+}
+
+// One chart per group, laid out left to right. Each computes its own y-scale,
+// which is the whole point: the groups are here because they do not share one.
+function renderMetricGroupCols(plot, fixed, axes, container, groups) {
+  html('div', 'chart-note', container).textContent =
+    'These groups are on different scales, so each has its own y-axis.';
+  const row = html('div', 'metric-row', container);
+  groups.forEach(g => {
+    const label = metricGroupLabel(g);
+    const col = html('div', 'metric-col', row);
+    col.setAttribute('data-caption', label);
+    const t = html('div', 'panel-title', col);
+    html('span', 'panel-name', t).textContent = label;
+    addTikzButton(t, () => col, 'TikZ', label, 'btn small ghost');
+    const view = Object.assign({}, plot, {
+      included: Object.assign({}, plot.included, { metric: g.slice() }),
+      metricBreaks: [],
+    });
+    // The group needs its OWN plan, not the parent's. The parent's was computed
+    // across every metric at once, so mixed scales had already forced Metric
+    // into panels -- handing that down leaves the leaf with no metric on any
+    // axis and nothing to draw. Within one group the scales usually agree, so
+    // Metric goes back where the user put it; where they still do not, this
+    // falls through to stacked panels inside the column, which is correct.
+    const subPlan = computeAxisPlan(view);
+    const subFixed = Object.assign({}, fixed);
+    // A group of one leaves Metric a filter rather than a dimension, exactly as
+    // it is for a single-metric plot -- and then the value has to be pinned
+    // here, or the leaf asks for a metric nobody named and draws nothing.
+    if (!subPlan.metricActive) subFixed.metric = g[0];
+    renderLeafPanels(view, subFixed, axesFromPlan(subPlan), col);
+  });
+}
+
 function renderLeaf(plot, fixed, axes, container) {
+  // only where Metric is still a free dimension: inside a per-metric panel it
+  // has already been fixed to one value and there is nothing left to group
+  const groups = (fixed[MEASURE_DIM] === undefined) ? metricGroupsOf(plot) : null;
+  if (groups) {
+    if (metricGroupsShareScale(groups) && axes.xDims.indexOf(MEASURE_DIM) !== -1) {
+      renderLeafOne(plot, fixed, axes, container, { metricBands: groups });
+      return;
+    }
+    renderMetricGroupCols(plot, fixed, axes, container, groups);
+    return;
+  }
+  return renderLeafPanels(plot, fixed, axes, container);
+}
+
+function renderLeafPanels(plot, fixed, axes, container) {
   if (!axes.metricPanels) { renderLeafOne(plot, fixed, axes, container); return; }
   let slots = 1;
   axes.metricPanels.forEach(mk => { slots = Math.max(slots, seriesSlotsFor(plot, axes, mk)); });
@@ -227,16 +315,42 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     }
   });
 
+  // The group band is a synthetic axis level: nothing downstream knows or cares
+  // where an x dimension came from -- xLayout keys its gaps off `vals` and
+  // drawXAxis labels its bands off `labels` -- so adding one entry to each is
+  // the whole of it. Done after pruning, so the band describes what is drawn.
+  let xDimsOut = xD;
+  if (opts.metricBands) {
+    const at = xD.indexOf(MEASURE_DIM);
+    if (at !== -1) {
+      const bandOf = {};
+      opts.metricBands.forEach((g, gi) => {
+        const lb = metricGroupLabel(g);
+        g.forEach(mk => { bandOf[mk] = { key: 'g' + gi, label: lb }; });
+      });
+      xVals.forEach(xv => {
+        const b = bandOf[xv.vals[MEASURE_DIM]] || { key: '', label: '' };
+        // the key is the group, not its name: two groups may read alike and
+        // must still be two bands
+        xv.vals[MGROUP_DIM] = b.key;
+        xv.labels = xv.labels.slice();
+        xv.labels.splice(at, 0, b.label);
+        xv.label = xv.labels.join(SEP);
+      });
+      xDimsOut = xD.slice(0, at).concat([MGROUP_DIM], xD.slice(at));
+    }
+  }
+
   // A line may only join points inside one innermost group: crossing into the next
   // Device or size block would draw a slope between unrelated configurations.
   let lineBreaks = null;
-  if (plot.breakLines !== false && xD.length > 1) {
+  if (plot.breakLines !== false && xDimsOut.length > 1) {
     lineBreaks = {};
-    axisRuns(xVals, xD, xD.length - 2).forEach(r => { lineBreaks[r.start] = true; });
+    axisRuns(xVals, xDimsOut, xDimsOut.length - 2).forEach(r => { lineBreaks[r.start] = true; });
   }
 
   const spec = {
-    series: sVals, x: xVals, xDims: xD, seriesDims: sDims,
+    series: sVals, x: xVals, xDims: xDimsOut, seriesDims: sDims,
     lineBreaks: lineBreaks,
     getValue: getValue, kind: kindInfo.kind,
     yAxis: plot.yAxis, style: style, chartType: plot.chartType,
@@ -245,7 +359,7 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     fixedCtx: fixed,
     // a plain record of what is plotted, so an export can ship data instead of shapes
     dataTable: {
-      xDims: xD, seriesDims: sDims, kind: kindInfo.kind, chartType: plot.chartType,
+      xDims: xDimsOut, seriesDims: sDims, kind: kindInfo.kind, chartType: plot.chartType,
       seriesLabels: sVals.map(sv => sv.label),
       // so a pgfplots figure carries the same appearance as the chart on screen
       seriesStyles: sVals.map(sv => ({ color: sv.color, shape: sv.shape, pattern: sv.pattern })),
@@ -301,6 +415,14 @@ function renderFacetLevel(plot, remaining, fixed, container, axes) {
   });
 }
 
+function axesFromPlan(plan) {
+  return {
+    seriesDims: plan.seriesDims, xDims: plan.xDims,
+    metricPanels: plan.metricPanels, forcedPanels: plan.forcedPanels,
+    dualAxis: plan.dualAxis,
+  };
+}
+
 function renderPlotChart(plot, container) {
   container.innerHTML = '';
   if (plot.included.metric.length === 0) {
@@ -310,12 +432,7 @@ function renderPlotChart(plot, container) {
   const plan = computeAxisPlan(plot);
   const fixed = {};
   if (!plan.metricActive) fixed.metric = plot.included.metric[0];
-  const axes = {
-    seriesDims: plan.seriesDims, xDims: plan.xDims,
-    metricPanels: plan.metricPanels, forcedPanels: plan.forcedPanels,
-    dualAxis: plan.dualAxis,
-  };
-  renderFacetLevel(plot, plan.facetDims, fixed, container, axes);
+  renderFacetLevel(plot, plan.facetDims, fixed, container, axesFromPlan(plan));
 }
 
 // Consecutive runs of x entries sharing the same values for xDims[0..level] - these

@@ -71,6 +71,9 @@ function makeDefaultPlot() {
     // null and 'auto' mean "derive it from the data", exactly as before
     yAxis: { min: null, max: null, scale: 'auto' },
     style: defaultPlotStyle(),
+    // "start a new group after this metric", keyed rather than indexed so it
+    // survives adding, removing and reordering the metrics around it
+    metricBreaks: [],
     breakLines: true,
     collapseRepeats: true,
     zones,
@@ -99,6 +102,7 @@ function clonePlot(p) {
     collapseRepeats: p.collapseRepeats,
     yAxis: Object.assign({ min: null, max: null, scale: 'auto' }, p.yAxis),
     style: normalisePlotStyle(p.style),
+    metricBreaks: (p.metricBreaks || []).slice(),
     zones: cloneZones(p.zones),
     metricZone: p.metricZone,
     metricPos: p.metricPos,

@@ -201,10 +201,16 @@ function renderZonesUI(container, plot, onChange) {
   });
 
   if (plan.forcedPanels) {
-    html('div', 'chart-note', container).textContent =
-      'The selected metrics use different scales (' + plan.metricKinds.join(' + ') +
-      '), so Metric is shown as stacked Panels — one sub-chart per metric. Remove the odd one out to group it as ' +
-      zoneTitle[plot.metricZone] + ' again.';
+    // With a split in play the groups decide the layout, not this fallback, so
+    // the advice has to change with it rather than describe what is not happening.
+    const split = plot.metricBreaks && plot.metricBreaks.length;
+    html('div', 'chart-note', container).textContent = split
+      ? 'The selected metrics use different scales (' + plan.metricKinds.join(' + ')
+        + '). Your groups are drawn side by side, each with its own y-axis.'
+      : 'The selected metrics use different scales (' + plan.metricKinds.join(' + ')
+        + '), so Metric is shown as stacked Panels — one sub-chart per metric. '
+        + 'Split them into groups in "Data shown", or remove the odd one out to group it as '
+        + zoneTitle[plot.metricZone] + ' again.';
   }
   if (plan.seriesCount > PALETTE_COMFORTABLE && plot.chartType !== 'table') {
     html('div', 'dim-warning', container).textContent =
@@ -291,7 +297,35 @@ function renderDimIncludedBlock(container, plot, dimKey, onChange) {
     return chip;
   }
 
-  plot.included[dimKey].forEach(value => includedBody.appendChild(makeChip(value, 'included')));
+  // Between the shown metrics, a place to split them into groups. The list is
+  // stacked vertically, so the divider sits between two chips the way it reads.
+  function splitControl(afterValue, isLast) {
+    if (dimKey !== MEASURE_DIM || isLast) return null;
+    const breaks = plot.metricBreaks || (plot.metricBreaks = []);
+    const on = breaks.indexOf(afterValue) !== -1;
+    const bar = html('div', 'metric-split' + (on ? ' on' : ''), null);
+    bar.setAttribute('data-after', afterValue);
+    bar.setAttribute('role', 'button');
+    bar.tabIndex = 0;
+    bar.title = on ? 'Remove this split' : 'Split the metrics into groups here';
+    html('span', 'metric-split-line', bar);
+    html('span', 'metric-split-text', bar).textContent = on ? 'group ends here ×' : 'split here';
+    const toggle = () => {
+      plot.metricBreaks = on ? breaks.filter(v => v !== afterValue) : breaks.concat([afterValue]);
+      onChange();
+    };
+    bar.addEventListener('click', toggle);
+    bar.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+    return bar;
+  }
+
+  plot.included[dimKey].forEach((value, i, arr) => {
+    includedBody.appendChild(makeChip(value, 'included'));
+    const sp = splitControl(value, i === arr.length - 1);
+    if (sp) includedBody.appendChild(sp);
+  });
   dim.values.filter(v => plot.included[dimKey].indexOf(v) === -1).forEach(value => availBody.appendChild(makeChip(value, 'available')));
 
   [[includedBody, 'included'], [availBody, 'available']].forEach(pair => {
@@ -306,6 +340,16 @@ function renderDimIncludedBlock(container, plot, dimKey, onChange) {
     });
   });
 
+  if (dimKey === MEASURE_DIM && plot.metricBreaks && plot.metricBreaks.length) {
+    const shown = plot.included[MEASURE_DIM];
+    const live = plot.metricBreaks.filter(v => shown.indexOf(v) !== -1 && shown[shown.length - 1] !== v);
+    if (live.length !== plot.metricBreaks.length) plot.metricBreaks = live;
+    const n = live.length + 1;
+    if (live.length) {
+      html('div', 'dim-note', block).textContent =
+        n + ' groups. They share one y-axis where the scales agree, and get one each where they do not.';
+    }
+  }
   if (plot.included[dimKey].length === 0) {
     html('div', 'dim-warning', block).textContent = 'Nothing shown for ' + dim.label + '.';
   }

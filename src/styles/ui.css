@@ -265,6 +265,21 @@
 .melt-preview tr.melt-miss td { color: var(--text-muted); opacity: .65; }
 .path-levels tr.col-partial td { opacity: .7; }
 .path-levels .name-input { width: 100%; min-width: 80px; }
+/* metric groups: the split control, and side-by-side group charts */
+.metric-split {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 2px 0; user-select: none; opacity: .35; transition: opacity .12s;
+}
+.metric-split:hover, .metric-split:focus-visible { opacity: 1; }
+.metric-split.on { opacity: 1; }
+.metric-split-line { flex: 1; height: 0; border-top: 1px dashed var(--text-muted); }
+.metric-split.on .metric-split-line { border-top: 2px solid var(--series-base); }
+.metric-split-text { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.metric-split.on .metric-split-text { color: var(--series-base); font-weight: 600; }
+.dim-note { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+.metric-row { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.metric-col { flex: 0 1 auto; min-width: 0; }
+.metric-col .panel-title { display: flex; align-items: center; gap: 8px; }
 .style-block { margin-bottom: 12px; }
 .style-toggle {
   font: inherit; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;

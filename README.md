@@ -109,12 +109,46 @@ Missing operands give a missing result rather than a zero, so gaps stay gaps.
 Both kinds of defined measure are stored with the dataset — a formula as the
 text that was typed — and recompiled on load.
 
+## Styling a figure
+
+Each plot has a **Style** panel under the chart. Palette (including a
+colourblind-safe set and a greyscale one for print), bar corners, bar textures,
+marker shapes, marker size and line width — plus a per-series row for
+overriding one colour, shape or texture by hand. Overrides are keyed by what the
+series *is*, so they survive filtering and a change of grouping.
+
+Shapes and textures exist because colour alone does not survive a greyscale
+print or a reader with a colour vision deficiency. Every shape is drawn as a
+circle or a polygon, and a textured bar is the solid colour with a texture over
+it — both so the appearance survives into TikZ, SVG, PNG and pgfplots rather
+than existing only on screen. The legend swatch becomes a drawn key as soon as
+shape or texture is carrying part of the distinction.
+
+The **Y** control in the plot head sets the scale (auto / linear / log) and the
+range. An empty bound fits the data; a number is used exactly as typed. Values
+outside a hand-set range are clipped to the frame and counted on the chart, so
+you can see how much is not being shown.
+
+## Grouping the metrics
+
+Two or more metrics in **Data shown** can be split into groups: click *split
+here* between them. Groups that share a scale become a band on one x-axis, with
+the bars still grouped horizontally. Groups that do not share a scale get a
+chart each, side by side, with their own y-axes — because a percentage and a
+raw count have no axis in common.
+
+A break is stored against the metric it follows, so it survives reordering, and
+it is dropped when that metric stops being shown.
+
+Moving a dimension between grouping zones offers an **Undo** in the status bar.
+
 ## Layout
 
     src/js/00-core      dataset handle, DOM helpers
     src/js/05-format    how a measure is scaled, coloured and printed
     src/js/06-model     the columnar dataset and its O(#dims) lookup
     src/js/08-formula   the calculator: parse, unit inference, evaluate
+    src/js/08-marks     marker shapes, bar textures, palettes, plot.style
     src/js/15-csv       parser and column profiling
     src/js/16-pattern   pulling named fields out of a column name or a path
     src/js/30-store     IndexedDB, plus an in-memory store for tests

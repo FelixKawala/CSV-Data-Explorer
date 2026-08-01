@@ -16,6 +16,7 @@ function serializePlots() {
     breakLines: p.breakLines, collapseRepeats: p.collapseRepeats,
     yAxis: Object.assign({}, p.yAxis),
     style: cloneStyle(p.style),
+    metricBreaks: (p.metricBreaks || []).slice(),
     zones: cloneZones(p.zones), metricZone: p.metricZone,
     metricPos: p.metricPos, included: cloneIncluded(p.included),
   }));
@@ -89,6 +90,7 @@ function deserializePlots(cfg) {
       collapseRepeats: p.collapseRepeats !== false,
       yAxis: normaliseYAxis(p.yAxis),
       style: normalisePlotStyle(p.style),
+      metricBreaks: Array.isArray(p.metricBreaks) ? p.metricBreaks.slice() : [],
       zones,
       metricZone: migrateMetricZone(p),
       metricPos: (typeof p.metricPos === 'number' && p.metricPos >= 0) ? p.metricPos : 99,
