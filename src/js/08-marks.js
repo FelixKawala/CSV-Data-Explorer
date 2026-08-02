@@ -180,6 +180,11 @@ function defaultPlotStyle() {
     markerSize: 3.5,
     lineWidth: 2,
     valueLabels: false,
+    // 'series' colours by the series entity, which is right when the series is
+    // what the reader is comparing. 'metric' colours by which measure a mark
+    // shows -- the only way to keep the measures apart when Metric is on the
+    // x-axis, where all of them otherwise come out one colour.
+    colourBy: 'series',
     series: {},              // sig -> { color?, shape?, pattern? }
   };
 }
@@ -198,6 +203,7 @@ function normalisePlotStyle(s) {
     markerSize: num(s.markerSize, d.markerSize, 1.5, 9),
     lineWidth: num(s.lineWidth, d.lineWidth, 0.5, 6),
     valueLabels: !!s.valueLabels,
+    colourBy: s.colourBy === 'metric' ? 'metric' : d.colourBy,
     series: (s.series && typeof s.series === 'object') ? s.series : {},
   };
 }
@@ -235,6 +241,12 @@ function paletteDimValueColor(paletteKey, dimKey, value) {
   const dim = DIM_BY_KEY[dimKey];
   const idx = dim ? dim.values.indexOf(value) : -1;
   return paletteColorAt(paletteKey, idx < 0 ? 0 : idx);
+}
+// A measure's own colour, stable across plots because it is keyed to the
+// measure's position in METRICS rather than to its position in this chart.
+function metricColorOf(paletteKey, metricKey) {
+  if (!metricKey) return null;
+  return paletteDimValueColor(paletteKey, MEASURE_DIM, metricKey);
 }
 function paletteColorAt(paletteKey, i) {
   const p = PALETTES[paletteKey];

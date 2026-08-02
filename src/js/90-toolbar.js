@@ -41,6 +41,10 @@ function renderBuilderToolbar() {
       b.type = 'button'; b.className = 'btn small'; b.textContent = p.label;
       b.title = p.hint;
       b.addEventListener('click', () => {
+        // A preset rewrites every zone and every included list at once, which
+        // is the largest single change a button on this page can make. It is
+        // exactly what an accidental click should be able to take back.
+        undoSnapshot = serializePlots();
         const plot = plots[0] || makeDefaultPlot();
         if (!plots.length) plots.push(plot);
         plot.zones = p.zones();
@@ -50,7 +54,7 @@ function renderBuilderToolbar() {
           plot.included[k] = facet ? DIM_BY_KEY[k].values.slice(0, 1) : DIM_BY_KEY[k].values.slice();
         });
         renderPlots();
-        setStatus(p.label + ' layout applied to plot 1', false);
+        setStatus('Plot 1 — ' + p.hint, true);
       });
       wrap.appendChild(b);
     });
@@ -150,7 +154,7 @@ function renderBuilderToolbar() {
   deriveBtn.title = 'Define a measure that compares another one across two values of a dimension';
   deriveBtn.addEventListener('click', () => {
     deriveOpen = !deriveOpen;
-    if (deriveOpen) formulaOpen = false;
+    if (deriveOpen) { formulaOpen = false; measuresOpen = false; }
     renderBuilder();
   });
   bar.appendChild(deriveBtn);
@@ -161,10 +165,21 @@ function renderBuilderToolbar() {
   calcBtn.title = 'Define a measure as arithmetic over the existing ones';
   calcBtn.addEventListener('click', () => {
     formulaOpen = !formulaOpen;
-    if (formulaOpen) deriveOpen = false;
+    if (formulaOpen) { deriveOpen = false; measuresOpen = false; }
     renderBuilder();
   });
   bar.appendChild(calcBtn);
+
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button'; editBtn.className = 'btn small'; editBtn.id = 'measures-toggle';
+  editBtn.textContent = measuresOpen ? 'Close measures' : 'Rename / retype measures';
+  editBtn.title = 'Change what a measure is called and what kind of quantity it is';
+  editBtn.addEventListener('click', () => {
+    measuresOpen = !measuresOpen;
+    if (measuresOpen) { deriveOpen = false; formulaOpen = false; }
+    renderBuilder();
+  });
+  bar.appendChild(editBtn);
 
   const status = html('div', 'builder-status', bar);
   status.id = 'builder-status';
@@ -177,6 +192,11 @@ function renderBuilderToolbar() {
     const holder = html('div', 'derive-holder', bar);
     holder.id = 'formula-holder';
     renderFormulaForm(holder);
+  }
+  if (measuresOpen) {
+    const holder = html('div', 'derive-holder', bar);
+    holder.id = 'measures-holder';
+    renderMeasureForm(holder);
   }
 
   refreshSavedViewsSelect();

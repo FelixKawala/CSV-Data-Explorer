@@ -175,6 +175,48 @@ function removeCustomMeasure(key) {
   return true;
 }
 
+// ---- editing a measure -----------------------------------------------------
+// A CSV column arrives named whatever the file called it and typed by a guess
+// from its values, and neither is necessarily right. Both are display policy
+// rather than data, so both can be changed after the fact without touching a
+// stored number: the label is what every axis, legend and chip reads, and the
+// format decides the scale, the units and -- through axisGroup -- which other
+// measures this one may share a y-axis with.
+function editMeasure(key, patch) {
+  const m = METRIC_BY_KEY[key];
+  if (!DS || !m) return null;
+  if (patch.label !== undefined) {
+    const label = String(patch.label).trim();
+    if (label) m.label = label;
+  }
+  if (patch.format !== undefined && FORMATS[patch.format]) {
+    // a computed measure keeps its own scaling: a formula's outScale is derived
+    // from the format it was compiled against, so it has to follow it
+    m.format = makeFormat(patch.format);
+    if (m.formula) m.formula.outScale = 1 / ratioScale(m.format);
+  }
+  useDataset(DS);
+  if (m.userDefined) persistCustomMeasures();
+  else persistMeasureOverrides();
+  return m;
+}
+
+// What has been changed away from what the recipe declared, so a reload can
+// replay it. Only the differences: a measure left alone stores nothing.
+function measureOverrideSpecs() {
+  if (!DS) return {};
+  const out = {};
+  DS.measures.forEach(m => {
+    if (m.userDefined) return;                 // stored with the measure itself
+    if (!m.__declared) return;
+    const o = {};
+    if (m.label !== m.__declared.label) o.label = m.label;
+    if (m.format.key !== m.__declared.format) o.format = m.format.key;
+    if (Object.keys(o).length) out[m.key] = o;
+  });
+  return out;
+}
+
 function customMeasures() { return DS ? DS.measures.filter(m => m.userDefined) : []; }
 function anyMetricIgnores(plot, dims) {
   for (let i = 0; i < plot.included[MEASURE_DIM].length; i++) {

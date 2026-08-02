@@ -49,9 +49,15 @@ function makeRowIndex(cellCount) {
 // mean) rather than last-write-wins, and the count is reported in `stats`.
 function makeDataset(spec) {
   const dims = spec.dims.map(makeDim);
-  const measures = spec.measures.map(m => Object.assign({}, m, {
-    format: m.format && m.format.key ? m.format : makeFormat(m.format || 'number'),
-  }));
+  const measures = spec.measures.map(m => {
+    const format = m.format && m.format.key ? m.format : makeFormat(m.format || 'number');
+    // what the source declared, kept so a later rename or retype can be stored
+    // as the difference from it rather than as a second copy of the recipe
+    return Object.assign({}, m, {
+      format,
+      __declared: { label: m.label || m.key, format: format.key },
+    });
+  });
   const measureByKey = {};
   measures.forEach(m => { measureByKey[m.key] = m; });
 
@@ -150,16 +156,88 @@ function rawMeasureAt(ds, ctx, measureKey) {
 // A derived measure compares one measure between two values of one dimension.
 // This is the generalisation of the old hardcoded `pair: ['tuned','base']`,
 // which could only ever compare along `variant`.
-//   { op: 'diff' | 'reldiff' | 'ratio', base: measureKey, over: dimKey, a, b }
+//   { op, base: measureKey, over: dimKey, a, b, hold?: [dimKey] }
+//
+// The base is read through datasetValueAt, not out of a stored column. Reading
+// the column meant a comparison over a CALCULATED measure found no column and
+// returned null at every tuple -- the comparison form offers calculated
+// measures as a base, so the only symptom was a measure that produced nothing
+// anywhere, with nothing to say why.
+function baseValueAt(ds, ctx, baseKey, hold) {
+  const read = c => {
+    const cc = Object.assign({}, c);
+    cc[MEASURE_DIM] = baseKey;
+    return datasetValueAt(ds, cc);
+  };
+  if (!hold || !hold.length) return read(ctx);
+  // A held dimension is one the comparison does not hold fixed. It exists
+  // because a dimension can be functionally dependent on the compared one --
+  // a compute capability that only ever occurs with one device -- and then
+  // holding everything else fixed means no tuple ever has both sides, and the
+  // measure is empty everywhere for a reason nothing on screen explains.
+  let combos = [ctx];
+  hold.forEach(k => {
+    const dim = ds.dims.filter(d => d.key === k)[0];
+    if (!dim) return;
+    const next = [];
+    combos.forEach(c => dim.values.forEach(v => {
+      const n = Object.assign({}, c); n[k] = v; next.push(n);
+    }));
+    combos = next;
+  });
+  let sum = 0, n = 0;
+  combos.forEach(c => { const v = read(c); if (v !== null && v !== undefined) { sum += v; n++; } });
+  return n ? sum / n : null;
+}
+
 function derivedValue(ds, ctx, spec) {
   const ca = Object.assign({}, ctx); ca[spec.over] = spec.a;
   const cb = Object.assign({}, ctx); cb[spec.over] = spec.b;
-  const a = rawMeasureAt(ds, ca, spec.base);
-  const b = rawMeasureAt(ds, cb, spec.base);
+  const a = baseValueAt(ds, ca, spec.base, spec.hold);
+  const b = baseValueAt(ds, cb, spec.base, spec.hold);
   if (a === null || b === null) return null;
   if (spec.op === 'reldiff') return b === 0 ? null : ((a - b) / b) * 100;
   if (spec.op === 'ratio') return b === 0 ? null : a / b;
   return a - b;
+}
+
+// How many tuples a comparison can actually be computed at, before it is
+// created -- and when the answer is none, which dimension is in the way.
+// Everything but the compared dimension is held fixed, so a dimension whose
+// value is decided by the compared one leaves the two sides with no tuple in
+// common, and the measure comes out empty at every point.
+function derivedCoverage(ds, spec) {
+  const out = { both: 0, aOnly: 0, bOnly: 0, blockers: [] };
+  if (!ds) return out;
+  const dim = ds.dims.filter(d => d.key === spec.over)[0];
+  if (!dim) return out;
+  const ca = dim.codeOf.get(spec.a), cb = dim.codeOf.get(spec.b);
+  if (ca === undefined || cb === undefined) return out;
+  const hold = spec.hold || [];
+  const pairsWith = held => {
+    const others = ds.dims.filter(d => d.key !== spec.over && held.indexOf(d.key) === -1);
+    const aSeen = {}, bSeen = {};
+    for (let r = 0; r < ds.nRows; r++) {
+      const c = ds.codes[spec.over][r];
+      if (c !== ca && c !== cb) continue;
+      let k = '';
+      for (let i = 0; i < others.length; i++) k += ds.codes[others[i].key][r] + ',';
+      if (c === ca) aSeen[k] = true; else bSeen[k] = true;
+    }
+    let both = 0, aOnly = 0, bOnly = 0;
+    Object.keys(aSeen).forEach(k => { if (bSeen[k]) both++; else aOnly++; });
+    Object.keys(bSeen).forEach(k => { if (!aSeen[k]) bOnly++; });
+    return { both, aOnly, bOnly };
+  };
+  const got = pairsWith(hold);
+  out.both = got.both; out.aOnly = got.aOnly; out.bOnly = got.bOnly;
+  if (out.both === 0) {
+    ds.dims.forEach(d => {
+      if (d.key === spec.over || hold.indexOf(d.key) !== -1) return;
+      if (pairsWith(hold.concat([d.key])).both > 0) out.blockers.push(d.key);
+    });
+  }
+  return out;
 }
 
 // A calculated measure is an expression over other measures, evaluated at this
@@ -194,7 +272,12 @@ function datasetValueAt(ds, ctx) {
 // dimension, so `byKey` is needed to follow the references.
 function measureIgnoresDim(m, dimKey, byKey) {
   if (!m) return false;
-  if (m.derived) return m.derived.over === dimKey;
+  // a held dimension is averaged over, so the measure does not vary along it
+  // either -- drawing it once per value would repeat the same number
+  if (m.derived) {
+    return m.derived.over === dimKey
+      || (m.derived.hold || []).indexOf(dimKey) !== -1;
+  }
   if (m.formula && byKey) {
     return m.formula.refs.some(k => k !== m.key && measureIgnoresDim(byKey[k], dimKey, byKey));
   }

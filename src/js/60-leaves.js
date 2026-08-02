@@ -16,6 +16,7 @@ function renderBarLeaf(container, spec) {
   const all = [];
   xVals.forEach(xv => sVals.forEach(sv => all.push(getValue(sv, xv))));
   const sc = makeYScale(kind, all, plotH, spec.yAxis);
+  const colourFor = metricColourFor(spec);
 
   const w = lay.plotW + marginL + marginR, h = plotH + marginT + marginB;
   const svg = el('svg', { viewBox: '0 0 ' + w + ' ' + h });
@@ -31,7 +32,8 @@ function renderBarLeaf(container, spec) {
       const barY = sc.clamp(sc.y(val));
       const barTop = Math.min(barY, sc.zeroY);
       const barH = Math.max(Math.abs(barY - sc.zeroY), 1);
-      const fill = signColoured ? (val >= 0 ? 'var(--div-pos-2)' : 'var(--div-neg-2)') : sv.color;
+      const fill = signColoured ? (val >= 0 ? 'var(--div-pos-2)' : 'var(--div-neg-2)')
+        : (colourFor ? colourFor(sv, xv) : sv.color);
       const rx = barCornerRadius(style.barCorner, lay.unitW, barH);
       const rect = el('rect', {
         class: 'bar', fill: fill,
@@ -69,7 +71,10 @@ function renderBarLeaf(container, spec) {
   axisNotes(container, sc, all);
   if (spec.showLegend !== false) {
     if (signColoured) polarityLegend(container);
-    else seriesLegend(container, sVals, spec.seriesDims, spec.style, spec.chartType);
+    else {
+      seriesLegend(container, sVals, spec.seriesDims, spec.style, spec.chartType);
+      metricLegend(container, spec);
+    }
   }
 }
 
@@ -104,45 +109,101 @@ function renderLineLeaf(container, spec) {
   const plotG = el('g', { transform: 'translate(' + marginL + ',' + marginT + ')' }, svg);
 
   drawYAxis(plotG, sc, lay.plotW);
-  drawSeriesLines(plotG, sVals, xVals, lay, sc, getValue, kind, false, spec.lineBreaks, spec.style);
+  drawSeriesLines(plotG, sVals, xVals, lay, sc, getValue, kind, false, spec.lineBreaks, spec.style,
+    { runs: spec.lineRuns, colourFor: metricColourFor(spec) });
   drawXAxis(plotG, xVals, xDims, lay, plotH, showX);
 
   scrollWrap(container, svg, w, h, spec);
   axisNotes(container, sc, all);
-  if (spec.showLegend !== false) seriesLegend(container, sVals, spec.seriesDims, spec.style, spec.chartType);
+  if (spec.showLegend !== false) {
+    seriesLegend(container, sVals, spec.seriesDims, spec.style, spec.chartType);
+    metricLegend(container, spec);
+  }
+}
+
+// Colouring by metric only means anything where the metric varies inside the
+// leaf. Where it does not -- a panel per measure, a single measure shown -- the
+// series colours are still the ones doing work, so this returns null and
+// nothing changes.
+function metricColourFor(spec) {
+  if (!spec || spec.colourBy !== 'metric' || !spec.metricKeyAt) return null;
+  const palette = (spec.style && spec.style.palette) || 'default';
+  return (sv, xv) => metricColorOf(palette, spec.metricKeyAt(sv, xv)) || sv.color;
+}
+
+// The key for those colours. Only where the series legend is not already saying
+// the same thing: with Metric as the series dimension the two agree, and two
+// legends listing the same names would be one too many.
+function metricLegend(container, spec) {
+  if (!spec || spec.colourBy !== 'metric' || !spec.metricKeyAt) return;
+  if ((spec.seriesDims || []).indexOf(MEASURE_DIM) !== -1) return;
+  const keys = [];
+  spec.series.forEach(sv => spec.x.forEach(xv => {
+    const mk = spec.metricKeyAt(sv, xv);
+    if (mk && keys.indexOf(mk) === -1) keys.push(mk);
+  }));
+  if (keys.length < 2) return;
+  const palette = (spec.style && spec.style.palette) || 'default';
+  const legend = html('div', 'legend metric-legend', container);
+  keys.forEach(mk => {
+    const item = html('div', 'item', legend);
+    html('span', 'swatch', item).style.background = metricColorOf(palette, mk);
+    html('span', null, item).textContent = METRIC_BY_KEY[mk] ? METRIC_BY_KEY[mk].label : mk;
+  });
 }
 
 // shared by the line chart and the secondary axis of a dual-axis chart
-function drawSeriesLines(plotG, sVals, xVals, lay, sc, getValue, kind, dashed, breaks, style) {
+//
+// `opts.runs` names the x positions each line passes through, one list per line.
+// With it, a missing value is stepped over instead of ending the line -- which
+// is the difference between "there is no measurement here" and "the series
+// stops here", and only the caller knows which was meant.
+function drawSeriesLines(plotG, sVals, xVals, lay, sc, getValue, kind, dashed, breaks, style, opts) {
   style = style || defaultPlotStyle();
+  opts = opts || {};
   const cx = gi => lay.gxs[gi] + lay.groupW / 2;
+  const colourAt = (sv, xv) => (opts.colourFor ? opts.colourFor(sv, xv) : sv.color);
+  const runs = opts.runs || null;
   sVals.forEach(sv => {
-    let run = [];
+    let pts = [];
     const flush = () => {
-      if (run.length > 1) {
+      if (pts.length > 1) {
         const attrs = {
           class: 'series-line', fill: 'none', stroke: sv.color,
           'stroke-width': style.lineWidth || 2,
-          points: run.map(p => p[0] + ',' + p[1]).join(' '),
+          points: pts.map(p => p[0] + ',' + p[1]).join(' '),
         };
         if (dashed) attrs['stroke-dasharray'] = '5 3';
         el('polyline', attrs, plotG);
       }
-      run = [];
+      pts = [];
     };
-    xVals.forEach((xv, gi) => {
-      if (breaks && gi > 0 && breaks[gi]) flush();
+    const point = (gi, bridging) => {
+      const xv = xVals[gi];
       const val = getValue(sv, xv);
-      if (val === null || val === undefined) { flush(); return; }
+      if (val === null || val === undefined) {
+        // bridging: the line is a claim about the named dimension, and a hole in
+        // it is a configuration that was not measured, not a break in the claim
+        if (!bridging) flush();
+        return;
+      }
       const px = cx(gi), py = sc.clamp(sc.y(val));
-      run.push([px, py]);
+      pts.push([px, py]);
       if (style.markers === 'none') return;
       const dot = drawMark(plotG, sv.shape || 'circle', px, py, style.markerSize || 3.5,
-        { fill: sv.color });
+        { fill: colourAt(sv, xv) });
       dot.addEventListener('mousemove', e => showTip(e, [
         xv.label + (sVals.length > 1 ? ' — ' + sv.label : ''), formatValue(kind, val)
       ]));
       dot.addEventListener('mouseleave', hideTip);
+    };
+    if (runs) {
+      runs.forEach(run => { run.forEach(gi => point(gi, true)); flush(); });
+      return;
+    }
+    xVals.forEach((xv, gi) => {
+      if (breaks && gi > 0 && breaks[gi]) flush();
+      point(gi, false);
     });
     flush();
   });
@@ -160,11 +221,27 @@ function renderDualAxisLeaf(container, spec, asLines) {
     const mk = sv.vals.metric;
     return (mk && METRIC_BY_KEY[mk]) ? METRIC_BY_KEY[mk].format : spec.kind;
   };
-  const kinds = [];
-  sVals.forEach(sv => { const k = kindOf(sv); if (kinds.indexOf(k) === -1) kinds.push(k); });
-  const primaryKind = kinds[0], secondaryKind = kinds[1];
-  const primary = sVals.filter(sv => kindOf(sv) === primaryKind);
-  const secondary = sVals.filter(sv => kindOf(sv) === secondaryKind);
+  // Which axis a series belongs on is a question about SCALE, not about which
+  // format object it happens to hold. Splitting on object identity gave every
+  // measure its own group, so two hit rates and a duration became "the first
+  // measure" and "the second" -- and the third was drawn on neither axis and
+  // silently vanished. Two measures share an axis exactly when sameAxis says so.
+  const axisGroups = [];
+  sVals.forEach(sv => {
+    const f = kindOf(sv);
+    let g = axisGroups.find(x => sameAxis(x.fmt, f));
+    if (!g) { g = { fmt: f, list: [] }; axisGroups.push(g); }
+    g.list.push(sv);
+  });
+  const primaryKind = axisGroups[0] ? axisGroups[0].fmt : spec.kind;
+  const secondaryKind = axisGroups[1] ? axisGroups[1].fmt : null;
+  const primary = axisGroups[0] ? axisGroups[0].list : [];
+  const secondary = axisGroups[1] ? axisGroups[1].list : [];
+  // A frame has two axes and no more. The plan only offers this chart for
+  // exactly two scales, so this is a backstop -- but a silently undrawn series
+  // is the failure this whole function just stopped having, and it is not
+  // allowed back in through the side door.
+  const unplaced = axisGroups.slice(2);
 
   const showX = spec.showXLabels !== false && xDims.length > 0;
   const lay = xLayout(xVals, xDims, asLines ? 1 : primary.length, asLines ? { unitW: 26, minUnit: 8 } : undefined);
@@ -177,7 +254,7 @@ function renderDualAxisLeaf(container, spec, asLines) {
     secondary.forEach(sv => secVals.push(getValue(sv, xv)));
   });
   const scL = makeYScale(primaryKind, primVals, plotH, spec.yAxis);
-  const scR = makeYScale(secondaryKind, secVals, plotH);
+  const scR = makeYScale(secondaryKind, secVals, plotH, spec.yAxisRight);
 
   const w = lay.plotW + marginL + marginR, h = plotH + marginT + marginB;
   const svg = el('svg', { viewBox: '0 0 ' + w + ' ' + h });
@@ -195,8 +272,10 @@ function renderDualAxisLeaf(container, spec, asLines) {
     el('line', { class: 'zero-line-right', x1: 0, x2: lay.plotW, y1: scR.zeroY, y2: scR.zeroY }, plotG);
   }
 
+  const colourFor = metricColourFor(spec);
+  const lineOpts = { runs: spec.lineRuns, colourFor: colourFor };
   if (asLines) {
-    drawSeriesLines(plotG, primary, xVals, lay, scL, getValue, primaryKind, false, spec.lineBreaks, spec.style);
+    drawSeriesLines(plotG, primary, xVals, lay, scL, getValue, primaryKind, false, spec.lineBreaks, spec.style, lineOpts);
   } else {
     xVals.forEach((xv, gi) => {
       primary.forEach((sv, vi) => {
@@ -206,20 +285,27 @@ function renderDualAxisLeaf(container, spec, asLines) {
         const barY = scL.y(val);
         const barTop = Math.min(barY, scL.zeroY);
         const rect = el('rect', {
-          class: 'bar', fill: sv.color, x: bx, y: barTop,
+          class: 'bar', fill: colourFor ? colourFor(sv, xv) : sv.color, x: bx, y: barTop,
           width: lay.unitW, height: Math.max(Math.abs(barY - scL.zeroY), 1), rx: Math.min(3, lay.unitW / 2)
         }, plotG);
         rect.addEventListener('mousemove', e => showTip(e, [
-          xv.label + ' — ' + sv.label, formatValue(primaryKind, val)
+          xv.label + ' — ' + sv.label, formatValue(kindOf(sv), val)
         ]));
         rect.addEventListener('mouseleave', hideTip);
       });
     });
   }
-  drawSeriesLines(plotG, secondary, xVals, lay, scR, getValue, secondaryKind, true, spec.lineBreaks, spec.style);
+  drawSeriesLines(plotG, secondary, xVals, lay, scR, getValue, secondaryKind, true, spec.lineBreaks, spec.style, lineOpts);
   drawXAxis(plotG, xVals, xDims, lay, plotH, showX);
 
   scrollWrap(container, svg, w, h, spec);
+  if (unplaced.length) {
+    html('div', 'chart-note', container).textContent =
+      'A frame has two y-axes, and these measures need '
+      + (axisGroups.length) + ': '
+      + unplaced.map(g => axisLabelOf(g.fmt)).join(', ')
+      + ' could not be drawn. Turn the second axis off to get a panel per scale instead.';
+  }
 
   if (spec.showLegend !== false) {
     const legend = html('div', 'legend axis-legend', container);
@@ -227,17 +313,16 @@ function renderDualAxisLeaf(container, spec, asLines) {
       if (list.length === 0) return;
       const g = html('div', 'legend-group' + (right ? ' right' : ''), legend);
       html('span', 'legend-cap', g).textContent = title;
+      // The right axis is always drawn as lines whatever the chart type, so its
+      // key is a mark; the left one is a mark only on a line chart. Same builder
+      // as the single-axis legend, so a texture set per series shows here too.
+      const mode = legendMode(list, style, (right || asLines) ? 'lines' : spec.chartType);
       list.forEach(sv => {
         const item = html('div', 'item', g);
-        // the same drawn key as the single-axis legend: on a line chart the
-        // shape is half of what tells the series apart, and a flat square here
-        // would say it was colour alone
-        if (asLines && style.markers !== 'none') {
-          const key = el('svg', { class: 'swatch-svg', width: 14, height: 14, viewBox: '0 0 14 14' });
-          drawMark(key, sv.shape || 'circle', 7, 7, 5, { fill: sv.color, class: 'swatch-mark' });
-          item.appendChild(key);
+        if (mode === 'flat' && right) {
+          html('span', 'swatch dashed', item).style.background = sv.color;
         } else {
-          html('span', 'swatch' + (right ? ' dashed' : ''), item).style.background = sv.color;
+          legendGlyph(item, sv, mode);
         }
         html('span', null, item).textContent = sv.label;
       });

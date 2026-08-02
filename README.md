@@ -112,6 +112,36 @@ Missing operands give a missing result rather than a zero, so gaps stay gaps.
 Both kinds of defined measure are stored with the dataset — a formula as the
 text that was typed — and recompiled on load.
 
+## Comparing across a dimension
+
+A **comparison measure** subtracts, divides or relates one measure between two
+values of one dimension: "L1 hit rate, RTX2080 against RTX4070". Its base may be
+an imported column *or* a calculated measure.
+
+It holds every other dimension fixed, which means a comparison can be perfectly
+well defined and computable nowhere: if a compute capability only ever occurs
+with one device, no two rows differ *only* in device and every lookup misses.
+The form says so before the measure is created — it counts the points the
+comparison will cover and names the dimension standing in the way. Ticking that
+dimension under **not holding fixed** averages over it instead, and the measure
+is named for what it then is (`…, mean over Compute cap`). Neither the compared
+dimension nor an averaged one is left as a grouping on the chart, since both
+would draw one number several times.
+
+## Renaming and retyping a measure
+
+**Rename / retype measures** (Builder toolbar) changes what a measure is called
+and what kind of quantity it is. A column arrives named whatever the file called
+it and typed by a guess from its values; both are presentation, and neither is
+necessarily right.
+
+The kind is the consequential one: it decides the units, whether the scale is
+logarithmic, and — through `axisGroup` — which other measures may share a y-axis
+with this one. Each row says what it currently shares an axis with. A
+comparison's kind is fixed by its operation and shown but not editable. Changes
+are stored as the *difference* from what the recipe declared, so re-importing
+with a better recipe does not keep a stale override alive.
+
 ## Styling a figure
 
 Each plot has a **Style** panel under the chart. Palette (including a
@@ -139,10 +169,28 @@ letting them look dropped. **Values** in the Style panel prints the number on
 each bar, which is the only way to read a bar that is a sliver next to a much
 larger one.
 
+**Colour by** in the Style panel switches colour from the series to the metric.
+Where Metric is on the x-axis every bar would otherwise be one colour, and this
+gives each measure its own wherever it is drawn, with a key of its own. pgfplots
+gives one colour per `\addplot`, so an export of such a chart says in a comment
+that it cannot reproduce it.
+
 The **Y** control in the plot head sets the scale (auto / linear / log) and the
 range. An empty bound fits the data; a number is used exactly as typed. Values
 outside a hand-set range are clipped to the frame and counted on the chart, so
-you can see how much is not being shown.
+you can see how much is not being shown. With a **second y-axis** on there are
+two such controls, **Y left** and **Y right** — a count opposite a rate usually
+wants log where the rate wants linear. The second axis takes a *scale*, not a
+measure: two hit rates and a duration put both rates on the left and the
+duration on the right, rather than the third measure going undrawn.
+
+A chart that draws lines offers the line and marker settings whether or not it
+is a line chart — a bar chart with a second axis draws its right-hand series as
+lines. **Lines** in the plot head chooses what a line joins: *follow the axis*
+keeps the drawn order and stops at a gap, and naming a dimension instead makes
+the line a statement about that dimension — one line per combination of the
+others, stepping over the x positions where there is no value rather than ending
+there.
 
 ## Grouping the metrics
 
@@ -155,7 +203,13 @@ raw count have no axis in common.
 A break is stored against the metric it follows, so it survives reordering, and
 it is dropped when that metric stops being shown.
 
-Moving a dimension between grouping zones offers an **Undo** in the status bar.
+Moving a dimension between grouping zones offers an **Undo** in the status bar,
+as does a layout preset — the largest single change a button here can make.
+
+The **Layout** presets in the toolbar are derived from whatever dimensions
+exist, and named after them: *Colour by Variant*, *One chart per Dataset*. Two
+presets that would produce the same layout are collapsed into one button, since
+the same thing under two names is the same button twice.
 
 ## Layout
 
@@ -168,6 +222,7 @@ Moving a dimension between grouping zones offers an **Undo** in the status bar.
     src/js/16-pattern   pulling named fields out of a column name or a path
     src/js/30-store     IndexedDB, plus an in-memory store for tests
     src/js/40-import-ui the Data tab
+    src/js/45..47       comparison, calculator and measure-editor forms
     src/js/50..65       axis planning and the chart renderers
     src/js/70..78       TikZ, CSV/pgfplots and image export
     test/               jsdom suites + the generated fixture

@@ -309,8 +309,9 @@
 .style-series .style-label { min-width: 120px; font-size: 11.5px; color: var(--text-primary); }
 .style-color { width: 30px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 5px; background: none; }
 .style-size, .style-linewidth { width: 92px; }
-.legend .swatch-svg { flex: none; }
-.yaxis-group { display: inline-flex; align-items: center; gap: 4px; }
+.legend .swatch-svg { flex: none; display: block; }
+.yaxis-group, .head-group { display: inline-flex; align-items: center; gap: 4px; }
+.line-along { font-size: 11.5px; padding: 3px 4px; }
 .yaxis-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 .yaxis-scale { font-size: 11.5px; padding: 3px 4px; }
 .yaxis-bound {
@@ -325,6 +326,16 @@
 .derive-form .radio-row { flex-wrap: wrap; }
 .derive-label { font-size: 11.5px; color: var(--text-muted); min-width: 52px; }
 .derive-preview { font-size: 12.5px; font-weight: 600; margin: 10px 0 2px; }
+.measure-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.measure-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.measure-name { min-width: 190px; }
+.measure-format { font-size: 12px; }
+.measure-note { font-size: 11px; color: var(--text-muted); }
+.derive-hold { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; }
+.derive-hold-item { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--text-secondary); }
+.derive-hold-item.blocker { color: var(--text-primary); font-weight: 600; }
+.derive-coverage { font-size: 11.5px; color: var(--text-muted); margin-bottom: 4px; }
+.derive-coverage.bad { color: var(--div-neg-3); }
 
 /* the calculator */
 .formula-palette { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 10px; }

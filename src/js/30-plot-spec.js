@@ -71,11 +71,21 @@ function makeDefaultPlot() {
     forceOneAxis: false,
     // null and 'auto' mean "derive it from the data", exactly as before
     yAxis: { min: null, max: null, scale: 'auto' },
+    // The right-hand axis of a dual-axis chart carries a different measure, so
+    // it needs its own range and its own linear/log choice -- a count opposite a
+    // rate is the whole reason the second axis exists, and a count usually wants
+    // log where the rate wants linear.
+    yAxisRight: { min: null, max: null, scale: 'auto' },
     style: defaultPlotStyle(),
     // "start a new group after this metric", keyed rather than indexed so it
     // survives adding, removing and reordering the metrics around it
     metricBreaks: [],
     breakLines: true,
+    // Which x dimension a line runs along. null keeps the old behaviour: one
+    // line across the axis in its drawn order, broken wherever a value is
+    // missing. Naming a dimension instead makes the line a statement about that
+    // dimension, and a missing point a gap it steps over rather than an end.
+    lineAlong: null,
     collapseRepeats: true,
     zones,
     metricZone: 'series',
@@ -103,7 +113,9 @@ function clonePlot(p) {
     breakLines: p.breakLines,
     collapseRepeats: p.collapseRepeats,
     yAxis: Object.assign({ min: null, max: null, scale: 'auto' }, p.yAxis),
+    yAxisRight: Object.assign({ min: null, max: null, scale: 'auto' }, p.yAxisRight),
     style: normalisePlotStyle(p.style),
+    lineAlong: p.lineAlong || null,
     metricBreaks: (p.metricBreaks || []).slice(),
     zones: cloneZones(p.zones),
     metricZone: p.metricZone,
@@ -119,30 +131,63 @@ function resetPlots() { plots = hasDataset() ? [makeDefaultPlot()] : []; }
 
 // Named zone layouts, offered in the toolbar. Derived from whatever dimensions
 // exist rather than hardcoded, so they mean something for an imported CSV too.
+//
+// Named AFTER those dimensions, too. "Nested", "Faceted" and "Side by side"
+// described the shape of the result and left you to work out which of your
+// dimensions would end up where -- which is the only thing you actually want to
+// know before pressing one. Every label now says what moves.
+function zoneSummary(z) {
+  const names = list => list.map(k => (DIM_BY_KEY[k] ? DIM_BY_KEY[k].label : k)).join(' × ');
+  const parts = [];
+  if (z.x.length) parts.push('x-axis: ' + names(z.x));
+  if (z.series.length) parts.push('colour: ' + names(z.series));
+  if (z.facet.length) parts.push('one chart per ' + names(z.facet));
+  return parts.join(' · ');
+}
+
 function layoutPresets() {
   const g = GROUPABLE_KEYS.slice();
   if (g.length < 2) return [];
+  const nameOf = k => (DIM_BY_KEY[k] ? DIM_BY_KEY[k].label : k);
   const first = g[0];
   const last = g[g.length - 1];
   const middle = g.slice(1, -1);
   const out = [
     {
-      label: 'Nested',
-      hint: 'every dimension but the last shares one x-axis, nested left to right',
+      key: 'default',
+      label: 'Default',
+      zones: defaultZones,
+    },
+    {
+      key: 'nested',
+      label: 'Colour by ' + nameOf(last),
       zones: () => ({ x: g.slice(0, -1), series: [last], facet: [] }),
     },
     {
-      label: 'Faceted',
-      hint: 'one chart per value of the first dimension',
+      key: 'faceted',
+      label: 'One chart per ' + nameOf(first),
       zones: () => ({ x: middle.length ? middle : [last], series: middle.length ? [last] : [], facet: [first] }),
     },
   ];
   if (g.length >= 3) {
     out.push({
-      label: 'Side by side',
-      hint: 'the innermost dimension on the x-axis, the outermost as the series colour',
+      key: 'sidebyside',
+      label: 'Colour by ' + nameOf(first),
       zones: () => ({ x: g.slice(1), series: [first], facet: [] }),
     });
   }
-  return out;
+  // Presets collide: with three dimensions the default layout IS "one chart per
+  // the first", and two buttons that do the same thing are worse than one. The
+  // test is what they produce, not what they are called -- the same layout
+  // under two names is the same button twice.
+  const seen = {};
+  const uniq = out.filter(p => {
+    const z = p.zones();
+    const sig = ZONE_KEYS.map(k => k + ':' + z[k].join(',')).join('|');
+    if (seen[sig]) return false;
+    seen[sig] = true;
+    p.hint = zoneSummary(z);
+    return true;
+  });
+  return uniq;
 }

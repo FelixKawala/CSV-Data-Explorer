@@ -16,6 +16,8 @@ function serializePlots() {
     forceOneAxis: !!p.forceOneAxis,
     breakLines: p.breakLines, collapseRepeats: p.collapseRepeats,
     yAxis: Object.assign({}, p.yAxis),
+    yAxisRight: Object.assign({}, p.yAxisRight),
+    lineAlong: p.lineAlong || null,
     style: cloneStyle(p.style),
     metricBreaks: (p.metricBreaks || []).slice(),
     zones: cloneZones(p.zones), metricZone: p.metricZone,
@@ -91,6 +93,9 @@ function deserializePlots(cfg) {
       breakLines: p.breakLines !== false,
       collapseRepeats: p.collapseRepeats !== false,
       yAxis: normaliseYAxis(p.yAxis),
+      yAxisRight: normaliseYAxis(p.yAxisRight),
+      // a dimension that no longer exists is not a line to draw along
+      lineAlong: GROUPABLE_KEYS.indexOf(p.lineAlong) !== -1 ? p.lineAlong : null,
       style: normalisePlotStyle(p.style),
       metricBreaks: Array.isArray(p.metricBreaks) ? p.metricBreaks.slice() : [],
       zones,

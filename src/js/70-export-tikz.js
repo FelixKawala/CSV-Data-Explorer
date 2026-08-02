@@ -167,7 +167,9 @@ function legendPatternKey(swSvg) {
 // the picture underneath the plot: a figure without its key is not a figure.
 function legendToTikz(legendEl, win, y0, width) {
   const out = [];
-  const items = legendEl.querySelectorAll('.item');
+  // `.legend-shared` carries what the trimmed labels have in common; without it
+  // the key names a series by only the part that varies.
+  const items = legendEl.querySelectorAll('.item, .legend-shared');
   if (!items.length) return out;
   let x = 0, y = y0 + 14, rowH = 14;
   for (let i = 0; i < items.length; i++) {
@@ -400,9 +402,18 @@ function buildTikzDocument(root, win, title) {
       const h = parseFloat(t.getAttribute('height')) || 0;
       const body = svgToTikz(t, win);
       const shell = t.parentNode && t.parentNode.parentNode;   // svg -> .svg-scroll -> .leaf-shell
-      const legend = shell && shell.parentNode
-        && Array.prototype.filter.call(shell.parentNode.children, e => e.classList && e.classList.contains('legend'))[0];
-      if (legend) Array.prototype.push.apply(body, legendToTikz(legend, win, h, w));
+      // every key, not the first: a chart coloured by metric has two
+      const legends = (shell && shell.parentNode)
+        ? Array.prototype.filter.call(shell.parentNode.children,
+          e => e.classList && e.classList.contains('legend'))
+        : [];
+      let ly = h;
+      legends.forEach(legend => {
+        const drawn = legendToTikz(legend, win, ly, w);
+        if (!drawn.length) return;
+        Array.prototype.push.apply(body, drawn);
+        ly += 14 * Math.max(1, Math.ceil(legend.querySelectorAll('.item').length / 4));
+      });
       figures.push({ cap: cap, body: body, kind: 'picture', w: w });
     }
   }

@@ -65,7 +65,10 @@ function cloneWithStyles(srcRoot, win) {
 // as the TikZ exporter does -- a figure without its key is not a figure.
 function legendToSvg(legendEl, win, doc, width, y0) {
   const g = doc.createElementNS(SVGNS, 'g');
-  const items = legendEl.querySelectorAll('.item');
+  // `.legend-shared` says what every series has in common. It is part of the
+  // key, not decoration: without it the trimmed labels are missing their
+  // subject, so it exports alongside the items.
+  const items = legendEl.querySelectorAll('.item, .legend-shared');
   let x = 0;
   let y = y0 + 14;
   let used = 0;
@@ -158,19 +161,23 @@ function nodeToSvgDocument(root, win) {
     g.appendChild(inner);
     y += h + dy + 6;
 
-    // the legend that belongs to this chart, if any
+    // every legend that belongs to this chart. A chart coloured by metric has
+    // two keys -- one for the series, one for the measures -- and taking only
+    // the first exported a figure that could not be read.
     const shell = svg.parentNode && svg.parentNode.parentNode;
-    const legend = shell && shell.parentNode
-      && Array.prototype.filter.call(shell.parentNode.children,
-        e => e.classList && e.classList.contains('legend'))[0];
-    if (legend) {
+    const legends = (shell && shell.parentNode)
+      ? Array.prototype.filter.call(shell.parentNode.children,
+        e => e.classList && e.classList.contains('legend'))
+      : [];
+    let legendY = dy + h;
+    legends.forEach(legend => {
       const built = legendToSvg(legend, win, doc, Math.max(w, 200), 0);
-      if (built.height) {
-        built.g.setAttribute('transform', 'translate(0,' + (dy + h) + ')');
-        g.appendChild(built.g);
-        y += built.height;
-      }
-    }
+      if (!built.height) return;
+      built.g.setAttribute('transform', 'translate(0,' + legendY + ')');
+      g.appendChild(built.g);
+      legendY += built.height;
+      y += built.height;
+    });
 
     out.appendChild(g);
     width = Math.max(width, w);

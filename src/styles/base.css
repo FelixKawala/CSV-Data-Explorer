@@ -124,9 +124,19 @@
     background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
   }
 
-  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 2px 0 4px; font-size: 12px; }
-  .legend .item { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+  /* A key is a lookup table, not a paragraph: it should cost as little vertical
+     room as it can and still be readable. A drawn swatch (a shape or a texture)
+     is taller than a 10px square, so without a fixed line box every legend with
+     one grew by half a line per row. */
+  .legend {
+    display: flex; gap: 4px 14px; flex-wrap: wrap; margin: 2px 0 4px;
+    font-size: 11.5px; line-height: 14px;
+  }
+  .legend .item { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); min-width: 0; }
+  .legend .item > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22ch; }
   .legend .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  /* what every series has in common, said once instead of once per series */
+  .legend-shared { flex-basis: 100%; color: var(--text-muted); font-size: 11px; }
 
   .empty-state {
     text-align: center; color: var(--text-muted); font-size: 13.5px;

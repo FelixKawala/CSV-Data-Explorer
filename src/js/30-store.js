@@ -323,8 +323,38 @@ function datasetFromRecord(rec) {
   }
 
   const ds = makeDataset({ name: rec.name, dims, measures, rows });
+  applyMeasureOverrides(ds, recipe.measureOverrides);
   attachCustomMeasures(ds, recipe.custom);
   return ds;
+}
+
+// A name or a format the user changed after importing. Stored as the
+// difference from what the recipe declared, so re-importing the same file with
+// a better recipe does not silently keep an old override alive under a name
+// that no longer exists.
+function applyMeasureOverrides(ds, overrides) {
+  if (!overrides || typeof overrides !== 'object') return;
+  Object.keys(overrides).forEach(key => {
+    const m = ds.measureByKey[key];
+    const o = overrides[key];
+    if (!m || !o) return;
+    if (o.label) m.label = String(o.label);
+    if (o.format && FORMATS[o.format]) m.format = makeFormat(o.format);
+  });
+}
+
+function persistMeasureOverrides() {
+  const id = activeDatasetId();
+  if (!id || !DS) return Promise.resolve(false);
+  const specs = measureOverrideSpecs();
+  return Promise.resolve()
+    .then(() => STORE.get(id))
+    .then(rec => {
+      if (!rec || !rec.recipe) return false;
+      rec.recipe.measureOverrides = specs;
+      return STORE.put(rec).then(() => true);
+    })
+    .catch(() => false);
 }
 
 // What a stored recipe will produce, without building it. The dataset cards on

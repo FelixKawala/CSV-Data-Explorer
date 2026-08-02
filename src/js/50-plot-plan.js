@@ -109,19 +109,23 @@ function effectiveKind(plot, fixed) {
     const m = METRIC_BY_KEY[mk];
     if (!m) return;
     if (groups.indexOf(m.format.axisGroup) === -1) { groups.push(m.format.axisGroup); formats.push(m.format); }
-    const over = m.derived ? m.derived.over : null;
-    if (over && ignored.indexOf(over) === -1) ignored.push(over);
+    // the compared dimension AND any the comparison averages over: the measure
+    // is one number for all of them, so grouping by either repeats it
+    const eaten = m.derived ? [m.derived.over].concat(m.derived.hold || []) : [];
+    eaten.forEach(k => { if (k && ignored.indexOf(k) === -1) ignored.push(k); });
   });
-  const ignoredDim = (ignored.length === 1 && inPlay.every(mk => measureIgnoresDim(METRIC_BY_KEY[mk], ignored[0])))
-    ? ignored[0] : null;
-  if (groups.length === 1) return { kind: formats[0], mixed: false, ignoredDim };
+  // only where EVERY measure on the chart ignores it; otherwise it is still a
+  // grouping for the ones that do vary along it
+  const ignoredDims = ignored.filter(
+    k => inPlay.every(mk => measureIgnoresDim(METRIC_BY_KEY[mk], k)));
+  if (groups.length === 1) return { kind: formats[0], mixed: false, ignoredDims };
   // Forced onto one axis: the first measure's format decides how the axis reads,
   // and the caller says so on the chart rather than letting it pass unremarked.
   const named = formats.map(axisLabelOf);
   if (plot.forceOneAxis) {
-    return { kind: formats[0], mixed: false, ignoredDim, forcedOne: true, kinds: named };
+    return { kind: formats[0], mixed: false, ignoredDims, forcedOne: true, kinds: named };
   }
-  return { kind: null, mixed: true, kinds: named, ignoredDim: null };
+  return { kind: null, mixed: true, kinds: named, ignoredDims: [] };
 }
 
 // A delta panel drops the Variant dimension (the comparison is already in the metric),
@@ -314,11 +318,11 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
 
   // A comparison measure already contains the comparison, so grouping by the very
   // dimension it compares over would repeat the same bar once per value of it.
-  const dropDim = (kindInfo.ignoredDim
-    && (seriesDims.indexOf(kindInfo.ignoredDim) !== -1 || xDims.indexOf(kindInfo.ignoredDim) !== -1))
-    ? kindInfo.ignoredDim : null;
-  const sDims = dropDim ? seriesDims.filter(k => k !== dropDim) : seriesDims;
-  const xD = dropDim ? xDims.filter(k => k !== dropDim) : xDims;
+  // The same is true of a dimension it averages over.
+  const dropDims = (kindInfo.ignoredDims || []).filter(
+    k => seriesDims.indexOf(k) !== -1 || xDims.indexOf(k) !== -1);
+  const sDims = dropDims.length ? seriesDims.filter(k => dropDims.indexOf(k) === -1) : seriesDims;
+  const xD = dropDims.length ? xDims.filter(k => dropDims.indexOf(k) === -1) : xDims;
 
   // comboEntries is a cartesian product. With a hardcoded schema its size was
   // known; with an imported CSV a free-text column marked as a dimension would
@@ -416,12 +420,19 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     lineBreaks = {};
     axisRuns(xVals, xDimsOut, xDimsOut.length - 2).forEach(r => { lineBreaks[r.start] = true; });
   }
+  // Naming the dimension a line runs along says what the line MEANS, and that
+  // is a different question from where the bars happen to sit. The points of
+  // one line then need not be adjacent on the axis, and a missing value is a
+  // gap the line steps over rather than the end of it.
+  const lineRuns = plot.lineAlong ? lineRunsFor(xVals, xDimsOut, plot.lineAlong) : null;
 
   const spec = {
     series: sVals, x: xVals, xDims: xDimsOut, seriesDims: sDims,
-    lineBreaks: lineBreaks,
+    lineBreaks: lineBreaks, lineRuns: lineRuns,
+    colourBy: style.colourBy,
     getValue: getValue, kind: kindInfo.kind,
-    yAxis: plot.yAxis, style: style, chartType: plot.chartType,
+    yAxis: plot.yAxis, yAxisRight: plot.yAxisRight,
+    style: style, chartType: plot.chartType,
     slots: opts.slots,
     collapseRepeats: plot.collapseRepeats !== false,
     fixedCtx: fixed,
@@ -431,7 +442,11 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
       seriesLabels: sVals.map(sv => sv.label),
       // so a pgfplots figure carries the same appearance as the chart on screen
       seriesStyles: sVals.map(sv => ({ color: sv.color, shape: sv.shape, pattern: sv.pattern })),
-      yAxis: plot.yAxis, markers: style.markers,
+      yAxis: plot.yAxis, yAxisRight: plot.yAxisRight, markers: style.markers,
+      // pgfplots gives one colour per \addplot, so a chart whose colour varies
+      // WITHIN a series is something it cannot say. Recorded here so the export
+      // can admit the difference rather than quietly drop it.
+      colourPerPoint: style.colourBy === 'metric' && sDims.indexOf(MEASURE_DIM) === -1,
       rows: xVals.map(xv => ({
         label: xv.label,
         parts: xv.labels.slice(),
@@ -471,9 +486,12 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
           + 'Turn on value labels in Style, or leave the panels split.'
         : ', so the smaller of them may be hard to read.');
   }
-  if (dropDim) {
+  if (dropDims.length) {
+    const names = dropDims.map(k => DIM_BY_KEY[k].label);
     html('div', 'chart-note', container).textContent =
-      DIM_BY_KEY[dropDim].label + ' is not a grouping here — this measure already compares across it.';
+      names.join(' and ') + (names.length === 1 ? ' is' : ' are')
+      + ' not a grouping here — this measure already compares or averages across '
+      + (names.length === 1 ? 'it' : 'them') + '.';
   }
 }
 
@@ -521,6 +539,25 @@ function renderPlotChart(plot, container) {
   const fixed = {};
   if (!plan.metricActive) fixed.metric = plot.included.metric[0];
   renderFacetLevel(plot, plan.facetDims, fixed, container, axesFromPlan(plan));
+}
+
+// The x positions each line passes through, when the user has named the
+// dimension the lines run along. One run per combination of the OTHER x
+// dimensions, holding the indices of every position that varies only along the
+// named one -- so a run need not be contiguous on the axis, which is the point:
+// with Device outermost and Threads named, one line per Device crosses the
+// whole chart instead of one line per Device × Threads block.
+function lineRunsFor(xVals, xDims, alongKey) {
+  if (xDims.indexOf(alongKey) === -1) return null;
+  const others = xDims.filter(k => k !== alongKey);
+  const byKey = {};
+  const runs = [];
+  xVals.forEach((xv, i) => {
+    const k = others.map(d => String(xv.vals[d])).join(SIG_SEP);
+    if (!Object.prototype.hasOwnProperty.call(byKey, k)) { byKey[k] = []; runs.push(byKey[k]); }
+    byKey[k].push(i);
+  });
+  return runs;
 }
 
 // Consecutive runs of x entries sharing the same values for xDims[0..level] - these

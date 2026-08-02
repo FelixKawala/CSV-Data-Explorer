@@ -55,6 +55,13 @@ function pgfplotsFor(data, csvFile, caption, win, colors) {
   const ylabel = axisLabelOf(data.kind);
   const out = [];
   if (caption) out.push('% --- ' + caption + ' ---');
+  if (data.colourPerPoint) {
+    // one \addplot carries one colour, and the chart on screen changes colour
+    // per point. Saying so beats a figure that quietly disagrees with it.
+    out.push('% On screen the colour follows the metric, which changes within a');
+    out.push('% series. pgfplots draws one colour per series, so the colours here');
+    out.push('% follow the series instead. Put Metric in the Series zone to match.');
+  }
   out.push('\\begin{tikzpicture}');
   out.push('  \\begin{axis}[');
   out.push('    width=\\linewidth, height=5cm,');

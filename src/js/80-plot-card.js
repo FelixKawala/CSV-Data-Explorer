@@ -30,7 +30,35 @@ function renderPlotCard(plot) {
     lab4.appendChild(cb4);
     html('span', null, lab4).textContent = 'collapse repeated values';
   }
-  if (plot.chartType === 'lines' && headPlan.xDims.length > 1) {
+  // What a line joins. By default it follows the axis and stops at a gap, which
+  // is right when the x-axis is a sequence. Naming a dimension instead makes the
+  // line a statement about that dimension: one line per combination of the
+  // others, stepping over the positions where there is no value rather than
+  // ending there.
+  const drawsLinesHead = plot.chartType === 'lines' || headPlan.dualAxis;
+  if (drawsLinesHead && headPlan.xDims.length > 1) {
+    const grp = html('span', 'head-group', head);
+    html('span', 'yaxis-label', grp).textContent = 'Lines';
+    const sel = document.createElement('select');
+    sel.className = 'line-along';
+    sel.title = 'Which dimension a line runs along. "follow the axis" keeps the '
+      + 'drawn order and breaks at a missing value.';
+    const opts = [['', 'follow the axis']].concat(
+      headPlan.xDims.filter(k => DIM_BY_KEY[k]).map(k => [k, 'along ' + DIM_BY_KEY[k].label]));
+    opts.forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o[0]; opt.textContent = o[1];
+      sel.appendChild(opt);
+    });
+    sel.value = plot.lineAlong || '';
+    sel.addEventListener('change', () => {
+      plot.lineAlong = sel.value || null; rerender(); persistPlotsDebounced();
+    });
+    grp.appendChild(sel);
+  }
+  // Breaking per group is what "follow the axis" does at a block boundary; once
+  // a dimension is named it is that dimension, not the blocks, that decides.
+  if (plot.chartType === 'lines' && headPlan.xDims.length > 1 && !plot.lineAlong) {
     const lab3 = html('label', 'head-toggle', head);
     const cb3 = document.createElement('input');
     cb3.type = 'checkbox'; cb3.checked = plot.breakLines !== false;
@@ -42,10 +70,16 @@ function renderPlotCard(plot) {
   }
   // ---- y-axis: scale and bounds -------------------------------------------
   // Only where there is a y-axis to speak of; a matrix and a table have none.
-  if (plot.chartType !== 'matrix' && plot.chartType !== 'table') {
-    const ax = plot.yAxis || (plot.yAxis = { min: null, max: null, scale: 'auto' });
+  // The second axis of a dual-axis chart is a different measure on a different
+  // scale, so it gets the same controls rather than being told to fit its data:
+  // a count opposite a rate usually wants log where the rate wants linear.
+  const axisControls = (which, caption, hint) => {
+    const ax = plot[which] || (plot[which] = { min: null, max: null, scale: 'auto' });
     const grp = html('span', 'yaxis-group', head);
-    html('span', 'yaxis-label', grp).textContent = 'Y';
+    grp.setAttribute('data-axis', which);
+    const cap = html('span', 'yaxis-label', grp);
+    cap.textContent = caption;
+    if (hint) cap.title = hint;
 
     const scaleSel = document.createElement('select');
     scaleSel.className = 'yaxis-scale';
@@ -63,37 +97,40 @@ function renderPlotCard(plot) {
 
     // An empty box means auto. Typing a number is a claim about the window you
     // want; it is used exactly as written, not padded.
-    const bound = (which, placeholder) => {
+    [['min', 'min'], ['max', 'max']].forEach(([key, placeholder]) => {
       const inp = document.createElement('input');
       inp.type = 'number';
       inp.className = 'yaxis-bound';
       inp.placeholder = placeholder;
-      inp.value = ax[which] === null || ax[which] === undefined ? '' : String(ax[which]);
+      inp.value = ax[key] === null || ax[key] === undefined ? '' : String(ax[key]);
       inp.title = 'Leave empty to fit the data.';
       inp.addEventListener('change', () => {
         const raw = inp.value.trim();
         const n = Number(raw);
-        ax[which] = (raw === '' || !isFinite(n)) ? null : n;
+        ax[key] = (raw === '' || !isFinite(n)) ? null : n;
         rerender(); persistPlotsDebounced();
       });
       grp.appendChild(inp);
-      return inp;
-    };
-    bound('min', 'min');
-    bound('max', 'max');
+    });
 
     if (ax.min !== null || ax.max !== null || ax.scale !== 'auto') {
       const reset = document.createElement('button');
       reset.type = 'button'; reset.className = 'btn small'; reset.textContent = 'auto';
       reset.title = 'Back to fitting the data';
       reset.addEventListener('click', () => {
-        plot.yAxis = { min: null, max: null, scale: 'auto' };
+        plot[which] = { min: null, max: null, scale: 'auto' };
         rerender(); persistPlotsDebounced();
       });
       grp.appendChild(reset);
     }
-    if (plot.dualAxis) {
-      html('span', 'radio-hint', grp).textContent = '(left axis; the right one fits its own data)';
+  };
+  if (plot.chartType !== 'matrix' && plot.chartType !== 'table') {
+    const twoAxes = headPlan.dualAxis;
+    axisControls('yAxis', twoAxes ? 'Y left' : 'Y',
+      twoAxes ? 'The axis the ' + (headPlan.metricKinds[0] || 'first') + ' series are drawn against' : '');
+    if (twoAxes) {
+      axisControls('yAxisRight', 'Y right',
+        'The axis the ' + (headPlan.metricKinds[1] || 'second') + ' series are drawn against');
     }
   }
 
@@ -228,6 +265,13 @@ function renderStyleBlock(container, plot, rerender) {
   head.addEventListener('click', () => { styleOpen[plot.id] = !styleOpen[plot.id]; rerender(); });
   if (!styleOpen[plot.id]) return;
 
+  // A bar chart draws lines too, once the second axis is on -- its right-hand
+  // series are always lines. Hiding the line and marker settings behind the
+  // chart type meant the only way to reach them was to switch to a line chart,
+  // change them, and switch back.
+  const drawsLines = plot.chartType === 'lines' || computeAxisPlan(plot).dualAxis;
+  const drawsBars = plot.chartType === 'bars' || plot.chartType === 'diverging';
+
   const body = html('div', 'style-body', block);
   const apply = () => { rerender(); persistPlotsDebounced(); };
   const row = labelText => {
@@ -255,7 +299,18 @@ function renderStyleBlock(container, plot, rerender) {
   html('span', 'radio-hint', r1).textContent =
     style.palette === 'grey' ? 'shapes and textures carry the distinction' : '';
 
-  if (plot.chartType === 'bars' || plot.chartType === 'diverging') {
+  // Only worth offering where more than one measure is on the chart: with one,
+  // colouring by metric paints everything the same and says nothing.
+  if (plot.included[MEASURE_DIM].length > 1) {
+    const r1b = row('Colour by');
+    pick(r1b, [['series', 'the series'], ['metric', 'the metric']], style.colourBy,
+      v => { style.colourBy = v; }, 'style-colour-by');
+    html('span', 'radio-hint', r1b).textContent = style.colourBy === 'metric'
+      ? 'each measure keeps its colour wherever it is drawn'
+      : 'colour follows whatever is in the Series zone';
+  }
+
+  if (drawsBars) {
     const r2 = row('Bars');
     pick(r2, [['rounded', 'rounded'], ['square', 'square'], ['pill', 'pill']],
       style.barCorner, v => { style.barCorner = v; }, 'style-corner');
@@ -263,7 +318,7 @@ function renderStyleBlock(container, plot, rerender) {
       .concat(BAR_PATTERNS.filter(p => p.key !== 'none').map(p => [p.key, p.label])),
       style.barPattern, v => { style.barPattern = v; }, 'style-pattern');
   }
-  if (plot.chartType === 'bars' || plot.chartType === 'diverging') {
+  if (drawsBars) {
     const r2b = html('label', 'style-row', body);
     html('span', 'style-label', r2b).textContent = 'Values';
     const vl = document.createElement('input');
@@ -276,7 +331,7 @@ function renderStyleBlock(container, plot, rerender) {
       'print the number on each bar — the only way to read a bar that is a sliver '
       + 'next to a much larger one';
   }
-  if (plot.chartType === 'lines') {
+  if (drawsLines) {
     const r3 = row('Points');
     pick(r3, [['auto', 'a shape each'], ['none', 'none']]
       .concat(MARK_SHAPES.map(m => [m.key, m.label])),
@@ -314,10 +369,13 @@ function renderStyleBlock(container, plot, rerender) {
       col.value = ov.color || rgbToHexSafe(sv.color) || '#888888';
       col.addEventListener('change', () => { ov.color = col.value; apply(); });
       r.appendChild(col);
-      if (plot.chartType === 'lines') {
+      // With two axes a chart draws both kinds of mark at once, so it offers
+      // both pickers rather than guessing which side this series is on.
+      if (drawsLines) {
         pick(r, [['', 'auto']].concat(MARK_SHAPES.map(m => [m.key, m.label])),
           ov.shape || '', v => { if (v) ov.shape = v; else delete ov.shape; }, 'style-series-shape');
-      } else {
+      }
+      if (drawsBars) {
         pick(r, [['', 'auto']].concat(BAR_PATTERNS.map(p => [p.key, p.label])),
           ov.pattern || '', v => { if (v) ov.pattern = v; else delete ov.pattern; }, 'style-series-pattern');
       }

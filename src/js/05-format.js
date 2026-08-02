@@ -78,7 +78,17 @@ function tickLabel(f, t) {
   }
   if (f.key === 'pct') return Math.round(t) + '%';
   if (f.key === 'fraction') return Math.round(t * 100) + '%';
-  return Math.round(t) + f.unit;
+  // Rounding a tick to a whole number is right for a count and destroys a
+  // duration: half a second between 0.33 and 0.51 printed three ticks reading
+  // 0s, 0s, 1s. Keep enough decimals for the magnitude to survive.
+  return trimNumber(t) + f.unit;
+}
+
+// A number with as many decimals as its size warrants and no trailing zeros.
+function trimNumber(t) {
+  const a = Math.abs(t);
+  const dp = a >= 100 ? 0 : a >= 10 ? 1 : a >= 1 ? 2 : a > 0 ? 3 : 0;
+  return String(Number(t.toFixed(dp)));
 }
 
 // Upper bound for a sequential colour ramp: a bounded format uses its declared

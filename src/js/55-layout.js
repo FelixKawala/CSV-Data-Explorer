@@ -15,32 +15,74 @@ function scrollWrap(container, svg, w, h, spec) {
 // texture is carrying part of that, a flat colour square is no longer a key --
 // it would say the series are told apart by colour alone, which is exactly the
 // claim these options exist to stop making.
+//
+// What a series is drawn WITH is the only thing that decides this, never the
+// plot-wide setting. A per-series override paints one bar with a texture while
+// the global setting still reads 'none'; keying off the global setting drew a
+// plain square for it and made the legend disagree with the chart.
+function legendMode(sVals, style, chartType) {
+  const asLines = chartType === 'lines';
+  if (asLines) {
+    return (style && style.markers === 'none') ? 'flat' : 'mark';
+  }
+  const textured = sVals.some(s => s.pattern && s.pattern !== 'none');
+  return textured ? 'bar' : 'flat';
+}
+
+function legendGlyph(item, s, mode) {
+  if (mode === 'flat') {
+    html('span', 'swatch', item).style.background = s.color;
+    return;
+  }
+  const svg = el('svg', { class: 'swatch-svg', width: 12, height: 12, viewBox: '0 0 14 14' });
+  if (mode === 'mark') {
+    // its own class: a key is not a data point, and things count data points
+    drawMark(svg, s.shape || 'circle', 7, 7, 5, { fill: s.color, class: 'swatch-mark' });
+  } else {
+    el('rect', { x: 1, y: 3, width: 12, height: 8, rx: 2, fill: s.color }, svg);
+    const tex = patternFill(svg, s.pattern, 'var(--text-primary)');
+    if (tex) {
+      el('rect', { x: 1, y: 3, width: 12, height: 8, rx: 2, fill: tex, opacity: 0.5 }, svg);
+    }
+  }
+  item.appendChild(svg);
+}
+
+// A composite series label repeats every part of the tuple, so with three series
+// dimensions and eight series the legend is eight copies of the same two words
+// plus the one that varies. Whatever every series agrees on is not telling them
+// apart -- it belongs in the caption, not eight times over in the key.
+function trimSeriesLabels(sVals) {
+  const parts = sVals.map(s => (s.labels && s.labels.length) ? s.labels : [s.label]);
+  const n = parts[0] ? parts[0].length : 0;
+  if (n < 2 || parts.some(p => p.length !== n)) {
+    return { labels: sVals.map(s => s.label), shared: [] };
+  }
+  const shared = [];
+  const keep = [];
+  for (let i = 0; i < n; i++) {
+    const first = parts[0][i];
+    if (parts.every(p => p[i] === first)) shared.push(first); else keep.push(i);
+  }
+  if (!keep.length) return { labels: sVals.map(s => s.label), shared: [] };
+  return { labels: parts.map(p => keep.map(i => p[i]).join(SEP)), shared };
+}
+
 function seriesLegend(container, sVals, seriesDims, style, chartType) {
   if (sVals.length <= 1) return;
   const legend = html('div', 'legend', container);
-  const shaped = style && chartType === 'lines' && style.markers !== 'none';
-  const textured = style && (chartType === 'bars' || chartType === 'diverging')
-    && style.barPattern !== 'none';
-  sVals.forEach(s => {
+  const mode = legendMode(sVals, style, chartType);
+  const trimmed = trimSeriesLabels(sVals);
+  sVals.forEach((s, i) => {
     const item = html('div', 'item', legend);
-    if (shaped || textured) {
-      const svg = el('svg', { class: 'swatch-svg', width: 14, height: 14, viewBox: '0 0 14 14' });
-      if (shaped) {
-        // its own class: a key is not a data point, and things count data points
-        drawMark(svg, s.shape || 'circle', 7, 7, 5, { fill: s.color, class: 'swatch-mark' });
-      } else {
-        el('rect', { x: 1, y: 3, width: 12, height: 8, rx: 2, fill: s.color }, svg);
-        const tex = patternFill(svg, s.pattern, 'var(--text-primary)');
-        if (tex) {
-          el('rect', { x: 1, y: 3, width: 12, height: 8, rx: 2, fill: tex, opacity: 0.5 }, svg);
-        }
-      }
-      item.appendChild(svg);
-    } else {
-      html('span', 'swatch', item).style.background = s.color;
-    }
-    html('span', null, item).textContent = s.label;
+    legendGlyph(item, s, mode);
+    const t = html('span', null, item);
+    t.textContent = trimmed.labels[i];
+    if (trimmed.labels[i] !== s.label) t.title = s.label;
   });
+  if (trimmed.shared.length) {
+    html('div', 'legend-shared', legend).textContent = 'all: ' + trimmed.shared.join(SEP);
+  }
 }
 
 // ---- shared cartesian layout (bars, lines, dual-axis all use these) ----
