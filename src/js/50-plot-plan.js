@@ -49,8 +49,10 @@ function computeAxisPlan(plot) {
     if (plot.forceOneAxis && mixedKinds && !dualAxis) splitScales = false;
     forcedPanels = splitScales && mz !== PANEL_ZONE.key && !dualAxis;
     if (mz === PANEL_ZONE.key || forcedPanels) {
-      // drawn as panels: Metric is not an axis, each metric becomes its own sub-chart
-      metricPanels = plot.included.metric.slice();
+      // Drawn as panels: Metric is not an axis. One panel per SCALE, not per
+      // metric -- two hit rates share an axis perfectly well, and splitting
+      // them into a panel each says they cannot be compared when they can.
+      metricPanels = metricScaleGroups(plot.included.metric);
     } else {
       axisDims[mz].splice(at, 0, 'metric');
     }
@@ -135,6 +137,36 @@ function seriesSlotsFor(plot, axes, metricKey) {
   return n;
 }
 
+// Metrics that can share one y-axis, in the order they are shown. Grouping by
+// axisGroup rather than by format identity is what keeps two unrelated `number`
+// measures apart while letting two percentages together.
+// Inside a panel or a group column, Metric has to sit on an axis that leaf
+// actually draws. If the user put it in Facets or Panels, that choice has
+// already been spent making this panel -- so within it Metric becomes Series,
+// which is the predictable place for it. X is honoured because it still means
+// something here.
+function innerMetricView(plot, metricKeys) {
+  const mz = (plot.metricZone === 'x' || plot.metricZone === 'series') ? plot.metricZone : 'series';
+  return Object.assign({}, plot, {
+    included: Object.assign({}, plot.included, { metric: metricKeys.slice() }),
+    metricBreaks: [],
+    metricZone: mz,
+  });
+}
+
+function metricScaleGroups(keys) {
+  const groups = [];
+  const at = {};
+  keys.forEach(mk => {
+    const m = METRIC_BY_KEY[mk];
+    if (!m) return;
+    const g = m.format.axisGroup;
+    if (at[g] === undefined) { at[g] = groups.length; groups.push([mk]); }
+    else groups[at[g]].push(mk);
+  });
+  return groups;
+}
+
 // ---- metric groups ---------------------------------------------------------
 // A divider dropped into the "Data shown" list splits the metrics into groups.
 // A group is a band on the x-axis when everything shares one scale, and a chart
@@ -188,10 +220,7 @@ function renderMetricGroupCols(plot, fixed, axes, container, groups) {
     const t = html('div', 'panel-title', col);
     html('span', 'panel-name', t).textContent = label;
     addTikzButton(t, () => col, 'TikZ', label, 'btn small ghost');
-    const view = Object.assign({}, plot, {
-      included: Object.assign({}, plot.included, { metric: g.slice() }),
-      metricBreaks: [],
-    });
+    const view = innerMetricView(plot, g);
     // The group needs its OWN plan, not the parent's. The parent's was computed
     // across every metric at once, so mixed scales had already forced Metric
     // into panels -- handing that down leaves the leaf with no metric on any
@@ -225,27 +254,44 @@ function renderLeaf(plot, fixed, axes, container) {
 
 function renderLeafPanels(plot, fixed, axes, container) {
   if (!axes.metricPanels) { renderLeafOne(plot, fixed, axes, container); return; }
+  const groups = axes.metricPanels;
   let slots = 1;
-  axes.metricPanels.forEach(mk => { slots = Math.max(slots, seriesSlotsFor(plot, axes, mk)); });
+  groups.forEach(g => g.forEach(mk => { slots = Math.max(slots, seriesSlotsFor(plot, axes, mk)); }));
   if (axes.forcedPanels) {
-    html('div', 'chart-note', container).textContent =
-      'Different scales — one panel per metric, each with its own y-axis.';
+    html('div', 'chart-note', container).textContent = groups.length === 1
+      ? 'One panel — these measures share a scale.'
+      : 'Different scales — one panel per scale, each with its own y-axis. '
+        + 'Measures of the same kind share a panel.';
   }
-  // one stacked sub-chart per metric, each with its own y-scale, sharing the x-axis:
-  // only the last panel carries the x tick labels and the legend
-  axes.metricPanels.forEach((mk, i) => {
-    const last = i === axes.metricPanels.length - 1;
+  // one stacked sub-chart per scale, each with its own y-scale, sharing the
+  // x-axis: only the last panel carries the x tick labels and the legend
+  groups.forEach((g, i) => {
+    const last = i === groups.length - 1;
+    const label = metricGroupLabel(g);
     const panel = html('div', 'metric-panel', container);
-    panel.setAttribute('data-caption', METRIC_BY_KEY[mk].label);
+    panel.setAttribute('data-caption', label);
     const pt = html('div', 'panel-title', panel);
-    html('span', 'panel-name', pt).textContent = METRIC_BY_KEY[mk].label;
-    addTikzButton(pt, () => panel, 'TikZ', METRIC_BY_KEY[mk].label, 'btn small ghost');
-    const panelFixed = Object.assign({}, fixed); panelFixed.metric = mk;
-    renderLeafOne(plot, panelFixed, axes, panel, {
+    html('span', 'panel-name', pt).textContent = label;
+    addTikzButton(pt, () => panel, 'TikZ', label, 'btn small ghost');
+    const opts = {
       showXLabels: plot.repeatPanelAxis || last,
-      showLegend: plot.repeatPanelAxis || last,
+      // Only the last panel carries the legend, because a panel of one metric is
+      // named by its own title. A panel holding SEVERAL always needs one: its
+      // title names the scale, not which series is which.
+      showLegend: plot.repeatPanelAxis || last || g.length > 1,
       slots: slots,
-    });
+    };
+    if (g.length === 1) {
+      const panelFixed = Object.assign({}, fixed);
+      panelFixed.metric = g[0];
+      renderLeafOne(plot, panelFixed, axes, panel, opts);
+      return;
+    }
+    // Several metrics on one panel: Metric has to be a real dimension again
+    // inside it, so the panel needs its own plan -- the outer one had already
+    // taken Metric off the axes to make these panels in the first place.
+    const view = innerMetricView(plot, g);
+    renderLeafOne(view, fixed, axesFromPlan(computeAxisPlan(view)), panel, opts);
   });
 }
 
@@ -406,9 +452,24 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
   else if (plot.chartType === 'lines') renderLineLeaf(container, spec);
   else renderBarLeaf(container, spec);
   if (kindInfo.forcedOne) {
+    // "May be hard to read" is an understatement when a bar comes out one pixel
+    // tall, which is what a duration next to a percentage actually does. Count
+    // them and say so, or it reads as the measure having been dropped.
+    const seen = [];
+    xVals.forEach(x => sVals.forEach(sv => {
+      const v = getValue(sv, x);
+      if (v !== null && v !== undefined) seen.push(Math.abs(v));
+    }));
+    const hi = seen.reduce((a, b) => Math.max(a, b), 0);
+    const tiny = hi > 0 ? seen.filter(v => v > 0 && v / hi < 0.01).length : 0;
     html('div', 'chart-note', container).textContent =
       'These measures are on different scales (' + kindInfo.kinds.join(' + ')
-      + ') but share one axis, so the smaller of them may be hard to read.';
+      + ') but share one axis'
+      + (tiny
+        ? ', and ' + tiny + ' value' + (tiny === 1 ? ' is' : 's are')
+          + ' under a hundredth of the tallest — drawn, but too small to see. '
+          + 'Turn on value labels in Style, or leave the panels split.'
+        : ', so the smaller of them may be hard to read.');
   }
   if (dropDim) {
     html('div', 'chart-note', container).textContent =

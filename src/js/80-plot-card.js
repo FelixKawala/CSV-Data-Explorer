@@ -263,6 +263,19 @@ function renderStyleBlock(container, plot, rerender) {
       .concat(BAR_PATTERNS.filter(p => p.key !== 'none').map(p => [p.key, p.label])),
       style.barPattern, v => { style.barPattern = v; }, 'style-pattern');
   }
+  if (plot.chartType === 'bars' || plot.chartType === 'diverging') {
+    const r2b = html('label', 'style-row', body);
+    html('span', 'style-label', r2b).textContent = 'Values';
+    const vl = document.createElement('input');
+    vl.type = 'checkbox';
+    vl.className = 'style-value-labels';
+    vl.checked = !!style.valueLabels;
+    vl.addEventListener('change', () => { style.valueLabels = vl.checked; apply(); });
+    r2b.appendChild(vl);
+    html('span', 'radio-hint', r2b).textContent =
+      'print the number on each bar — the only way to read a bar that is a sliver '
+      + 'next to a much larger one';
+  }
   if (plot.chartType === 'lines') {
     const r3 = row('Points');
     pick(r3, [['auto', 'a shape each'], ['none', 'none']]

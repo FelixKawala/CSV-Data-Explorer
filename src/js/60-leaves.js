@@ -40,6 +40,15 @@ function renderBarLeaf(container, spec) {
       }, plotG);
       // texture as a second rect over the solid colour, so `fill` stays a plain
       // paint for anything that cannot resolve a url(#id)
+      // The number on the bar. When measures of different size share a frame the
+      // small one is a sliver, and the label is the only way to read it at all.
+      if (style.valueLabels) {
+        const t = el('text', {
+          class: 'bar-value', x: bx + lay.unitW / 2, y: Math.max(barTop - 3, 8),
+          'text-anchor': 'middle',
+        }, plotG);
+        t.textContent = formatValue(kind, val);
+      }
       const tex = signColoured ? null : patternFill(svg, sv.pattern, 'var(--text-primary)');
       if (tex) {
         el('rect', {

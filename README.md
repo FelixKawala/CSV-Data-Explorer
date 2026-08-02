@@ -127,10 +127,17 @@ it — both so the appearance survives into TikZ, SVG, PNG and pgfplots rather
 than existing only on screen. The legend swatch becomes a drawn key as soon as
 shape or texture is carrying part of the distinction.
 
-Measures of different kinds are split into panels by default, because a rate and
-a count share no axis. **One shared y-axis** in the plot head overrides that when
-they are comparable after all — a rate and a relative change are both percentages
-— and the chart says what it cost.
+Measures of different kinds are split into panels — **one panel per scale, not
+one per measure**, so two hit rates share an axis and a duration gets its own.
+The panels stack over a common x-axis, which is the honest way to read a
+percentage, a time and a count in one figure.
+
+**One shared y-axis** in the plot head overrides the split when the measures are
+comparable after all — a rate and a relative change are both percentages. The
+chart then reports how many values ended up too small to see, rather than
+letting them look dropped. **Values** in the Style panel prints the number on
+each bar, which is the only way to read a bar that is a sliver next to a much
+larger one.
 
 The **Y** control in the plot head sets the scale (auto / linear / log) and the
 range. An empty bound fits the data; a number is used exactly as typed. Values

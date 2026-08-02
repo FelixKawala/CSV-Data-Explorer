@@ -179,6 +179,7 @@ function defaultPlotStyle() {
     markers: 'auto',         // 'auto' (shape per series) | 'circle' | 'none'
     markerSize: 3.5,
     lineWidth: 2,
+    valueLabels: false,
     series: {},              // sig -> { color?, shape?, pattern? }
   };
 }
@@ -196,6 +197,7 @@ function normalisePlotStyle(s) {
       ? s.markers : d.markers,
     markerSize: num(s.markerSize, d.markerSize, 1.5, 9),
     lineWidth: num(s.lineWidth, d.lineWidth, 0.5, 6),
+    valueLabels: !!s.valueLabels,
     series: (s.series && typeof s.series === 'object') ? s.series : {},
   };
 }

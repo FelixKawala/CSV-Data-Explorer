@@ -37,3 +37,6 @@
   .hidden { display: none !important; }
   .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
   .badge { display:inline-block; background: var(--page); border:1px solid var(--border); border-radius:999px; padding:1px 8px; font-size:10.5px; color:var(--text-muted); }
+
+  /* the number printed on a bar, for when the bar itself is unreadably small */
+  .bar-value { font-size: 8.5px; fill: var(--text-secondary); pointer-events: none; }

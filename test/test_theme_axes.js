@@ -82,7 +82,7 @@ console.log('\n=== 3. Two kinds can be forced onto one axis ===');
   ok(d.querySelectorAll('#plots .series-dot').length > 0, 'both measures are drawn',
      d.querySelectorAll('#plots .series-dot').length);
   const note = d.querySelector('#plots .chart-note').textContent;
-  ok(/different scales/.test(note) && /may be hard to read/.test(note),
+  ok(/different scales/.test(note) && /(hard to read|too small to see)/.test(note),
      'with the cost stated on the chart, not left to be discovered', note);
   ok(/rate %/.test(note) && /relative change %/.test(note),
      'naming the scales as a reader knows them, not as internal keys', note);
@@ -91,6 +91,77 @@ console.log('\n=== 3. Two kinds can be forced onto one axis ===');
   ok(w.eval('JSON.stringify(serializePlots()[0].forceOneAxis)') === 'true', 'it is saved');
   w.eval('applyConfig(' + w.eval('JSON.stringify(serializePlots())') + ')');
   ok(w.eval('plots[0].forceOneAxis') === true, 'and restored');
+  w.close();
+}
+
+// a dataset shaped like the reported case: two rates and a duration
+function threeKinds(w) {
+  w.eval('setStore(makeMemoryStore());');
+  const CSV = 'app,l1,l2,exectime\nA,62.1,88.4,0.42\nB,55.3,79.0,0.51\nC,71.8,90.2,0.33\n';
+  const rec = { id: 'r', name: 'r', sources: [{ filename: 'r.csv', text: CSV }], recipe: { columns: [
+    { source: 'app', name: 'app', label: 'App', role: 'dimension' },
+    { source: 'l1', name: 'l1', label: 'L1 hit rate', role: 'measure', format: 'pct' },
+    { source: 'l2', name: 'l2', label: 'L2 hit rate', role: 'measure', format: 'pct' },
+    { source: 'exectime', name: 'exectime', label: 'Exec time', role: 'measure', format: 'duration' }] } };
+  w.eval('startWithDataset(datasetFromRecord(' + JSON.stringify(rec) + '))');
+}
+
+console.log('\n=== 6. Panels are one per SCALE, not one per metric ===');
+{
+  const { w, d } = boot();
+  threeKinds(w);
+  add(d, 'L2 hit rate');
+  add(d, 'Exec time');
+  ok(w.eval('JSON.stringify(plots[0].included.metric)') === '["l1","l2","exectime"]',
+     'three metrics of two kinds are shown');
+  ok(w.eval('JSON.stringify(computeAxisPlan(plots[0]).metricPanels)') === '[["l1","l2"],["exectime"]]',
+     'the two rates share a panel, the duration gets its own',
+     w.eval('JSON.stringify(computeAxisPlan(plots[0]).metricPanels)'));
+  const names = Array.from(d.querySelectorAll('#plots .panel-name')).map(t => t.textContent);
+  ok(names.length === 2, 'two panels, not three', names.length + ': ' + names.join(' | '));
+  ok(names[0] === 'L1 hit rate / L2 hit rate', 'the shared one names both', names[0]);
+  ok(d.querySelectorAll('#plots .plot-empty').length === 0, 'nothing refused to draw');
+  ok(d.querySelectorAll('#plots rect.bar').length === 9, 'every value is drawn',
+     d.querySelectorAll('#plots rect.bar').length);
+  // the shared panel must have Metric back on a real axis inside it
+  ok(d.querySelectorAll('#plots .legend').length > 0, 'and the shared panel has a legend to tell them apart');
+  w.close();
+}
+
+console.log('\n=== 7. One axis says when a measure is too small to see ===');
+{
+  const { w, d } = boot();
+  threeKinds(w);
+  add(d, 'L2 hit rate');
+  add(d, 'Exec time');
+  const cb = d.querySelector('#plots .one-axis-toggle');
+  cb.checked = true; cb.dispatchEvent(new w.Event('change'));
+  const note = d.querySelector('#plots .chart-note').textContent;
+  ok(/3 values are under a hundredth/.test(note),
+     'it counts what has been squashed rather than calling it "hard to read"', note);
+  ok(/value labels/.test(note), 'and says what to do about it');
+  const heights = Array.from(d.querySelectorAll('#plots rect.bar')).map(r => +r.getAttribute('height'));
+  ok(heights.filter(h => h <= 1).length === 3, 'the durations really are one pixel tall',
+     JSON.stringify(heights.filter(h => h <= 1)));
+  w.close();
+}
+
+console.log('\n=== 8. Value labels put the number on the bar ===');
+{
+  const { w, d } = boot();
+  threeKinds(w);
+  add(d, 'Exec time');
+  ok(d.querySelectorAll('#plots text.bar-value').length === 0, 'off by default');
+  d.querySelector('#plots .style-toggle').click();
+  const vl = d.querySelector('#plots .style-value-labels');
+  ok(!!vl, 'a control for it in Style');
+  vl.checked = true; vl.dispatchEvent(new w.Event('change'));
+  const labels = Array.from(d.querySelectorAll('#plots text.bar-value')).map(t => t.textContent);
+  ok(labels.length === 6, 'one per bar', labels.length);
+  ok(labels.indexOf('62.10%') !== -1 && labels.indexOf('0.42s') !== -1,
+     'each formatted in its own panel\'s units, not the first panel\'s',
+     labels.join(' '));
+  ok(w.eval('serializePlots()[0].style.valueLabels') === true, 'and it is saved');
   w.close();
 }
 
