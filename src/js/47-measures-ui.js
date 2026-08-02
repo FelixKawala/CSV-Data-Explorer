@@ -15,6 +15,29 @@
 
 let measuresOpen = false;
 
+// Removing a measure another one is built on would leave that other quietly
+// returning nothing, so that case names the dependants instead of doing it.
+// Shared by every list that shows a user-defined measure.
+function addMeasureRemoveButton(host, m) {
+  const x = document.createElement('button');
+  x.type = 'button';
+  x.className = 'btn small danger measure-remove';
+  x.textContent = 'Remove';
+  x.setAttribute('data-measure', m.key);
+  x.title = 'Remove ' + m.label;
+  x.addEventListener('click', () => {
+    const r = removeCustomMeasure(m.key);
+    if (r === true) {
+      renderBuilder();
+      setStatus('Removed "' + m.label + '".', false);
+    } else if (Array.isArray(r)) {
+      setStatus('"' + m.label + '" is used by ' + r.join(', ') + ' — remove those first.', false);
+    }
+  });
+  host.appendChild(x);
+  return x;
+}
+
 // Only the presets a measure can sensibly be retyped as. `fraction` is offered
 // because a 0..1 column read as `number` is the commonest wrong guess after
 // `pct`, and the two differ only in where the hundred goes.
@@ -104,6 +127,9 @@ function renderMeasureForm(host) {
     if (m.userDefined) {
       const tag = html('span', 'role-badge', r);
       tag.textContent = m.derived ? 'comparison' : 'calculated';
+      // A measure defined on the page can be taken back from wherever it is
+      // listed, not only from the form that happened to create it.
+      addMeasureRemoveButton(r, m);
     }
   });
 

@@ -115,7 +115,7 @@ function texProblems(tex) {
     ok((one.text.match(/\\begin\{tikzpicture\}/g) || []).length === 1, 'a facet exports just its own charts');
     ok(/Device: dev1/.test(one.text), 'and captions it', (/% --- (.*) ---/.exec(one.text) || [])[1]);
 
-    const whole = await grab(w, () => Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'Export TikZ').click());
+    const whole = await grab(w, () => Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'TikZ').click());
     ok((whole.text.match(/\\begin\{tikzpicture\}/g) || []).length === 3, 'the plot-level button exports all three facets',
        (whole.text.match(/\\begin\{tikzpicture\}/g) || []).length);
     ok(texProblems(whole.text).length === 0, 'still sound', texProblems(whole.text).join('; '));
@@ -156,7 +156,7 @@ function texProblems(tex) {
   {
     const { w, d } = boot();
     setType(w, d, 'table');
-    const btn = Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'Export TikZ');
+    const btn = Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'TikZ');
     const f = await grab(w, () => btn.click());
     ok(/\\begin\{tabular\}/.test(f.text), 'a tabular is emitted');
     ok(/\\toprule[\s\S]*\\midrule[\s\S]*\\bottomrule/.test(f.text), 'with booktabs rules');

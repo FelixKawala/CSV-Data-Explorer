@@ -5,15 +5,21 @@
 // became data (it is how the bundle's Δ measures are built); this is the form
 // that lets a user declare one for an imported CSV, where nothing is hardcoded.
 
+// A ratio and a share are the same arithmetic read two ways: 0.92 and 92%. Both
+// are offered because which one belongs in a figure is a question about the
+// figure, not about the numbers -- "0.92× the baseline" and "92% of the
+// baseline" are not interchangeable in a caption.
 const DERIVE_OPS = [
   { key: 'diff', label: 'difference (a − b)', format: 'delta' },
   { key: 'reldiff', label: 'relative change ((a − b) / b)', format: 'reldelta' },
+  { key: 'share', label: 'share (a as % of b)', format: 'pct' },
   { key: 'ratio', label: 'ratio (a / b)', format: 'number' },
 ];
 
 let deriveOpen = false;
 
 function derivedMeasureLabel(op, baseLabel, aLabel, bLabel) {
+  if (op === 'share') return baseLabel + ' (' + aLabel + ' as % of ' + bLabel + ')';
   if (op === 'ratio') return baseLabel + ' (' + aLabel + ' / ' + bLabel + ')';
   const sign = op === 'reldiff' ? ' vs ' : ' − ';
   return 'Δ ' + baseLabel + ' (' + aLabel + sign + bLabel + ')';
@@ -180,6 +186,10 @@ function renderDeriveForm(host, initial) {
   refresh();
   box.appendChild(preview);
   box.appendChild(coverage);
+  // The same list the calculator shows. A measure defined on this page should
+  // be removable from any form that defines one, not only from the one that
+  // happened to create it.
+  renderCustomMeasureList(box);
 
   const acts = html('div', 'import-actions', box);
   const add = document.createElement('button');

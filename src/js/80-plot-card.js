@@ -1,5 +1,9 @@
 // plot card and plot list
 // ---- plot card & plot list management ----
+// Open until the user closes it: the axis strip is where a range gets set, and
+// hiding it by default would make the settings harder to find than the crowding
+// it exists to cure.
+const axesOpen = {};
 function renderPlotCard(plot) {
   const container = document.getElementById('plot-card-' + plot.id);
   if (!container) return;
@@ -38,7 +42,7 @@ function renderPlotCard(plot) {
   const drawsLinesHead = plot.chartType === 'lines' || headPlan.dualAxis;
   if (drawsLinesHead && headPlan.xDims.length > 1) {
     const grp = html('span', 'head-group', head);
-    html('span', 'yaxis-label', grp).textContent = 'Lines';
+    html('span', 'mini-label', grp).textContent = 'Lines';
     const sel = document.createElement('select');
     sel.className = 'line-along';
     sel.title = 'Which dimension a line runs along. "follow the axis" keeps the '
@@ -73,8 +77,14 @@ function renderPlotCard(plot) {
   // The second axis of a dual-axis chart is a different measure on a different
   // scale, so it gets the same controls rather than being told to fit its data:
   // a count opposite a rate usually wants log where the rate wants linear.
+  // Axis settings live in a strip of their own, not strung along the head next
+  // to the chart type and the buttons. There can be three of them at once (one
+  // per scale), each with a select and two boxes, and inline they crowded out
+  // everything they sat beside. Collapsible, because once a range is set it is
+  // set.
+  const axesBar = html('div', 'plot-axes-bar', null);
   const axisControls = (ax, tag, caption, hint) => {
-    const grp = html('span', 'yaxis-group', head);
+    const grp = html('span', 'yaxis-group', axesBar);
     grp.setAttribute('data-axis', tag);
     const cap = html('span', 'yaxis-label', grp);
     cap.textContent = caption;
@@ -154,13 +164,13 @@ function renderPlotCard(plot) {
   // word. A frame has two axes; say so, rather than leaving the control the
   // user had a moment ago simply gone.
   if (!headPlan.dualEligible && headPlan.scaleCount > 2 && isCartesian(plot.chartType)) {
-    const hint = html('span', 'head-note', head);
+    const hint = html('span', 'head-note', axesBar);
     hint.textContent = 'a second y-axis takes two scales; this shows ' + headPlan.scaleCount;
     hint.title = headPlan.metricKinds.join(', ')
       + ' — drop one from Data shown to use a second axis, or read them as the panels below.';
   }
   if (headPlan.dualEligible) {
-    const lab2 = html('label', 'head-toggle', head);
+    const lab2 = html('label', 'head-toggle', axesBar);
     const cb2 = document.createElement('input');
     cb2.type = 'checkbox'; cb2.checked = !!plot.dualAxis;
     cb2.title = 'Two y-scales in one frame: compact, but where the series cross means nothing.';
@@ -169,7 +179,7 @@ function renderPlotCard(plot) {
     html('span', null, lab2).textContent = 'second y-axis';
   }
   if (headPlan.oneAxisEligible) {
-    const lab5 = html('label', 'head-toggle', head);
+    const lab5 = html('label', 'head-toggle', axesBar);
     const cb5 = document.createElement('input');
     cb5.type = 'checkbox';
     cb5.className = 'one-axis-toggle';
@@ -182,7 +192,7 @@ function renderPlotCard(plot) {
     html('span', null, lab5).textContent = 'one shared y-axis';
   }
   if (headPlan.metricPanels) {
-    const lab = html('label', 'head-toggle', head);
+    const lab = html('label', 'head-toggle', axesBar);
     const cb = document.createElement('input');
     cb.type = 'checkbox'; cb.checked = !!plot.repeatPanelAxis;
     cb.addEventListener('change', () => { plot.repeatPanelAxis = cb.checked; rerender(); persistPlotsDebounced(); });
@@ -190,24 +200,43 @@ function renderPlotCard(plot) {
     html('span', null, lab).textContent = 'grouping on every panel';
   }
 
-  addTikzButton(head, () => document.getElementById('plot-render-' + plot.id) || container,
-    'Export TikZ', 'plot ' + (plots.indexOf(plot) + 1), 'btn small');
+  // The axis strip only exists if there is something in it, and it collapses.
+  if (axesBar.childNodes.length) {
+    const open = axesOpen[plot.id] !== false;
+    const t = html('button', 'axes-toggle', head);
+    t.type = 'button';
+    t.setAttribute('data-plot', String(plot.id));
+    const nAxes = axesBar.querySelectorAll('.yaxis-group').length;
+    t.textContent = (open ? '▾' : '▸') + '  Axes'
+      + (nAxes > 1 ? ' (' + nAxes + ')' : '');
+    t.title = 'Scale and range for each y-axis this chart has';
+    t.addEventListener('click', () => { axesOpen[plot.id] = !open; rerender(); });
+    if (open) container.appendChild(axesBar);
+  }
 
+  // One place for "get this out of the page", rather than three buttons loose
+  // among the toggles and the card actions.
+  const exports = html('span', 'export-group', head);
+  html('span', 'mini-label', exports).textContent = 'Export';
+  addTikzButton(exports, () => document.getElementById('plot-render-' + plot.id) || container,
+    'TikZ', 'plot ' + (plots.indexOf(plot) + 1), 'btn small');
+
+  const actions = html('span', 'card-actions', head);
   const dupBtn = document.createElement('button'); dupBtn.type = 'button'; dupBtn.className = 'btn small'; dupBtn.textContent = 'Duplicate';
   dupBtn.addEventListener('click', () => { const idx = plots.indexOf(plot); plots.splice(idx + 1, 0, clonePlot(plot)); renderPlots(); });
-  head.appendChild(dupBtn);
+  actions.appendChild(dupBtn);
 
   const upBtn = document.createElement('button'); upBtn.type = 'button'; upBtn.className = 'btn small'; upBtn.textContent = '↑';
   upBtn.addEventListener('click', () => { const idx = plots.indexOf(plot); if (idx > 0) { plots.splice(idx, 1); plots.splice(idx - 1, 0, plot); renderPlots(); } });
-  head.appendChild(upBtn);
+  actions.appendChild(upBtn);
 
   const downBtn = document.createElement('button'); downBtn.type = 'button'; downBtn.className = 'btn small'; downBtn.textContent = '↓';
   downBtn.addEventListener('click', () => { const idx = plots.indexOf(plot); if (idx < plots.length - 1) { plots.splice(idx, 1); plots.splice(idx + 1, 0, plot); renderPlots(); } });
-  head.appendChild(downBtn);
+  actions.appendChild(downBtn);
 
   const rmBtn = document.createElement('button'); rmBtn.type = 'button'; rmBtn.className = 'btn small danger'; rmBtn.textContent = 'Remove';
   rmBtn.addEventListener('click', () => { plots = plots.filter(p => p !== plot); if (plots.length === 0) plots = [makeDefaultPlot()]; renderPlots(); });
-  head.appendChild(rmBtn);
+  actions.appendChild(rmBtn);
 
   const onDimChange = () => { rerender(); persistPlotsDebounced(); };
 
@@ -324,15 +353,21 @@ function renderStyleBlock(container, plot, rerender) {
   html('span', 'radio-hint', r1).textContent =
     style.palette === 'grey' ? 'shapes and textures carry the distinction' : '';
 
-  // Only worth offering where more than one measure is on the chart: with one,
-  // colouring by metric paints everything the same and says nothing.
-  if (plot.included[MEASURE_DIM].length > 1) {
+  // Always offered, even with one measure shown. Hiding it until a second
+  // measure arrived meant the setting existed only in states nobody was in when
+  // they went looking for it -- and a control you cannot find is a control that
+  // is not there.
+  {
     const r1b = row('Colour by');
-    pick(r1b, [['series', 'the series'], ['metric', 'the metric']], style.colourBy,
+    const many = plot.included[MEASURE_DIM].length > 1;
+    const sel = pick(r1b, [['series', 'the series'], ['metric', 'the metric']], style.colourBy,
       v => { style.colourBy = v; }, 'style-colour-by');
-    html('span', 'radio-hint', r1b).textContent = style.colourBy === 'metric'
-      ? 'each measure keeps its colour wherever it is drawn'
-      : 'colour follows whatever is in the Series zone';
+    sel.disabled = !many;
+    html('span', 'radio-hint', r1b).textContent = !many
+      ? 'one measure shown — colouring by it would paint everything the same'
+      : (style.colourBy === 'metric'
+        ? 'each measure keeps its colour wherever it is drawn'
+        : 'colour follows whatever is in the Series zone');
   }
 
   if (drawsBars) {

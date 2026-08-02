@@ -173,6 +173,59 @@ console.log('\n=== 3c. Three scales: the second-axis offer is withdrawn, and say
   w.close();
 }
 
+console.log('\n=== 3d. The axis settings are a strip of their own, and collapse ===');
+{
+  const { w, d } = boot();
+  threeKinds(w);
+  add(d, 'L2 hit rate');
+  add(d, 'Exec time');
+  const bar = () => d.querySelector('#plots .plot-axes-bar');
+  ok(!!bar(), 'there is a strip');
+  ok(bar().parentNode.className === 'plot-card',
+     'outside the head, not strung along it next to the chart type',
+     bar().parentNode.className);
+  ok(d.querySelectorAll('#plots .plot-head .yaxis-group').length === 0,
+     'so no axis control is left in the head');
+  ok(bar().querySelectorAll('.yaxis-group').length === 2, 'both axes are in it');
+  ok(Array.from(bar().querySelectorAll('.head-toggle')).some(l => /one shared y-axis/.test(l.textContent)),
+     'and so are the toggles about axes');
+
+  const t = d.querySelector('#plots .axes-toggle');
+  ok(!!t && /Axes/.test(t.textContent), 'a control to collapse it', t && t.textContent.trim());
+  ok(/\(2\)/.test(t.textContent), 'saying how many axes are in there', t.textContent.trim());
+  ok(t.textContent.indexOf('▾') === 0, 'open to begin with — a hidden setting is a lost setting');
+  t.click();
+  ok(!bar(), 'clicking it puts the strip away');
+  ok(d.querySelectorAll('#plots rect.bar').length > 0, 'and the chart is unaffected');
+  d.querySelector('#plots .axes-toggle').click();
+  ok(!!bar(), 'and back');
+  w.close();
+}
+
+console.log('\n=== 3e. The exports sit together ===');
+{
+  const { w, d } = boot();
+  const grp = d.querySelector('#plots .export-group');
+  ok(!!grp, 'they are one group');
+  const labels = Array.from(grp.querySelectorAll('button')).map(b => b.textContent);
+  ok(labels.join(',') === 'TikZ,SVG,PNG', 'holding every export and nothing else', labels.join(','));
+  ok(grp.textContent.indexOf('Export') === 0, 'captioned as what they are', grp.textContent.slice(0, 12));
+  const actions = d.querySelector('#plots .card-actions');
+  ok(!!actions && Array.from(actions.querySelectorAll('button')).map(b => b.textContent).join(',')
+     === 'Duplicate,↑,↓,Remove', 'and the card actions are their own group, not mixed in',
+     actions && actions.textContent);
+
+  // the panel says what each part is, not just what it is called
+  grp.querySelector('button').click();
+  const tabs = Array.from(d.querySelectorAll('#tex-modal .tex-tab'));
+  ok(tabs.map(b => b.textContent).join(' | ') === 'TikZ (drawn) | pgfplots (reads the .csv) | the .csv',
+     'the TikZ export offers a pgfplots figure that plots an exported .csv',
+     tabs.map(b => b.textContent).join(' | '));
+  ok(tabs.map(b => b.title).join(',') === 'plot-1.tex,plot-1-pgfplots.tex,plot-1.csv',
+     'each still downloading under its filename', tabs.map(b => b.title).join(','));
+  w.close();
+}
+
 console.log('\n=== 4. Line settings are reachable from a chart that draws lines ===');
 {
   const { w, d } = boot();
@@ -249,6 +302,7 @@ console.log('\n=== 7. Colour can follow the metric instead of the series ===');
   d.querySelector('#plots .style-toggle').click();
   const sel = d.querySelector('#plots .style-colour-by');
   ok(!!sel, 'the choice is offered once two measures are shown');
+  ok(!sel.disabled, 'and usable');
   ok(sel.value === 'series', 'colouring by series stays the default');
 
   sel.value = 'metric';
@@ -262,6 +316,21 @@ console.log('\n=== 7. Colour can follow the metric instead of the series ===');
   ok(keys.length === 2 && keys.some(t => /Rate A/.test(t)) && keys.some(t => /Rate B/.test(t)),
      'and there is a key for it', keys.join(' | '));
   ok(w.eval('serializePlots()[0].style.colourBy') === 'metric', 'saved with the plot');
+  w.close();
+}
+
+console.log('\n=== 7b. And it is findable before there are two measures ===');
+{
+  // Hiding the control until a second measure arrived meant it existed only in
+  // states nobody was in when they went looking for it.
+  const { w, d } = boot();
+  ok(w.eval('plots[0].included.metric.length') === 1, 'one measure shown');
+  d.querySelector('#plots .style-toggle').click();
+  const sel = d.querySelector('#plots .style-colour-by');
+  ok(!!sel, 'the control is still listed');
+  ok(sel.disabled, 'greyed, because with one measure it would say nothing');
+  const hint = sel.parentNode.querySelector('.radio-hint');
+  ok(/one measure shown/.test(hint.textContent), 'and it says why', hint.textContent);
   w.close();
 }
 

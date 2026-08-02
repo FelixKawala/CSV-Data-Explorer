@@ -46,7 +46,11 @@ function showTexPanel(parts, note) {
 
   parts.forEach((p, i) => {
     const b = document.createElement('button');
-    b.type = 'button'; b.className = 'tex-tab'; b.textContent = p.name;
+    // The tab says what the thing IS; the filename is what it downloads as.
+    // "plot-1.tex" next to "plot-1-pgfplots.tex" made the reader work out the
+    // difference from a suffix.
+    b.type = 'button'; b.className = 'tex-tab'; b.textContent = p.tab || p.name;
+    b.title = p.name;
     b.setAttribute('aria-pressed', 'false');
     b.addEventListener('click', () => show(i));
     tabs.appendChild(b);
@@ -101,13 +105,18 @@ function addTikzButton(host, getRoot, label, name, cls) {
     const tex = buildTikzDocument(root, window, name);
     if (!tex) { setStatus('Nothing to export here yet.', false); return; }
     const base = slugify(name);
-    const parts = [{ name: base + '.tex', text: tex }];
+    const parts = [{ name: base + '.tex', text: tex, tab: 'TikZ (drawn)' }];
     const pgf = buildPgfplotsDocument(root, name, base, window);
     if (pgf) {
-      if (pgf.tex) parts.push({ name: base + '-pgfplots.tex', text: pgf.tex });
-      pgf.files.forEach(f => parts.push(f));
+      if (pgf.tex) parts.push({ name: base + '-pgfplots.tex', text: pgf.tex, tab: 'pgfplots (reads the .csv)' });
+      // one .csv per chart when a plot holds several, and then the filename is
+      // the only thing that tells them apart
+      const many = pgf.files.length > 1;
+      pgf.files.forEach(f => parts.push(Object.assign({ tab: many ? f.name : 'the .csv' }, f)));
     }
-    showTexPanel(parts, pgf ? 'standalone TikZ, or pgfplots reading the .csv' : null);
+    showTexPanel(parts, pgf
+      ? 'TikZ redraws the figure; pgfplots plots the .csv, so restyling never means regenerating the data'
+      : null);
     setStatus('Export ready — ' + base + '.tex', false);
   });
   host.appendChild(btn);

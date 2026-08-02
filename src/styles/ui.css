@@ -311,7 +311,7 @@
 .style-size, .style-linewidth { width: 92px; }
 .yaxis-group, .head-group { display: inline-flex; align-items: center; gap: 4px; }
 .line-along { font-size: 11.5px; padding: 3px 4px; }
-.yaxis-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.yaxis-label, .mini-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 .yaxis-scale { font-size: 11.5px; padding: 3px 4px; }
 .yaxis-bound {
   width: 58px; font: inherit; font-size: 11.5px; padding: 3px 5px;
@@ -355,3 +355,20 @@
 .formula-defined { cursor: default; }
 .formula-defined button { font-size: 12px; }
 .head-note { font-size: 11px; color: var(--text-muted); }
+
+/* ---- the plot's axis strip ---- */
+.plot-axes-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px;
+  padding: 8px 10px; margin: -4px 0 12px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--page);
+}
+.axes-toggle, .export-group, .card-actions { display: inline-flex; align-items: center; gap: 6px; }
+.axes-toggle {
+  font: inherit; font-size: 11.5px; color: var(--text-secondary); cursor: pointer;
+  background: var(--page); border: 1px solid var(--border); border-radius: 7px; padding: 4px 9px;
+}
+.axes-toggle:hover { color: var(--text-primary); border-color: var(--axis); }
+.export-group {
+  padding-left: 10px; border-left: 1px solid var(--border);
+}
+.card-actions { padding-left: 10px; border-left: 1px solid var(--border); }

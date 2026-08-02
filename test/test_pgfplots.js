@@ -21,7 +21,8 @@ function exportParts(d) {
   const m = d.getElementById('tex-modal');
   const tabs = Array.from(m.querySelectorAll('.tex-tab'));
   const out = {};
-  tabs.forEach(t => { t.click(); out[t.textContent] = m.querySelector('textarea').value; });
+  // the tab is labelled by what the part IS; its title is the filename
+  tabs.forEach(t => { t.click(); out[t.title || t.textContent] = m.querySelector('textarea').value; });
   return out;
 }
 const nonAscii = t => { const m = t.match(/[^\x00-\x7F]/g); return m ? Array.from(new Set(m)).join('') : ''; };
@@ -33,7 +34,7 @@ console.log('\n=== 1. The unicode that broke pdflatex is gone ===');
   add(d, 'Δ Rate A (Tuned−Base)');
   setZone(w, d, 'metric', 'x');
   ok(d.querySelectorAll('#plots .plot-table td.repeat').length > 0, 'the table does contain ditto marks');
-  Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'Export TikZ').click();
+  Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'TikZ').click();
   const parts = exportParts(d);
   Object.keys(parts).forEach(k => {
     ok(nonAscii(parts[k]) === '', k + ' is pure ASCII', nonAscii(parts[k]) || 'clean');
@@ -50,7 +51,7 @@ console.log('\n=== 2. Every chart type exports pure ASCII ===');
     const { w, d } = boot();
     if (t === 'diverging') { rm(d, 'Rate A'); add(d, 'Δ Count A (Tuned vs Base)'); }
     setType(w, d, t);
-    Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'Export TikZ').click();
+    Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'TikZ').click();
     const parts = exportParts(d);
     const bad = Object.keys(parts).map(k => nonAscii(parts[k])).join('');
     ok(bad === '', t + ' exports clean', bad || 'ok, ' + Object.keys(parts).length + ' file(s)');
@@ -154,7 +155,7 @@ console.log('\n=== 7. Several charts, several csv files ===');
 {
   const { w, d } = boot();
   setZone(w, d, 'device', 'facet');
-  Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'Export TikZ').click();
+  Array.from(d.querySelectorAll('#plots .plot-head button')).find(b => b.textContent === 'TikZ').click();
   const parts = exportParts(d);
   const csvs = Object.keys(parts).filter(n => /\.csv$/.test(n));
   ok(csvs.length === 3, 'one csv per facet', csvs.join(' | '));

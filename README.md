@@ -116,7 +116,10 @@ text that was typed — and recompiled on load.
 
 A **comparison measure** subtracts, divides or relates one measure between two
 values of one dimension: "L1 hit rate, RTX2080 against RTX4070". Its base may be
-an imported column *or* a calculated measure.
+an imported column *or* a calculated measure. Four readings are offered: a
+difference in points, a relative change, a **share** (`a` as a percentage of
+`b`) and a plain ratio. The last two are the same quotient — 92% and 0.92 —
+because which one belongs in a caption is a question about the caption.
 
 It holds every other dimension fixed, which means a comparison can be perfectly
 well defined and computable nowhere: if a compute capability only ever occurs
@@ -141,6 +144,23 @@ with this one. Each row says what it currently shares an axis with. A
 comparison's kind is fixed by its operation and shown but not editable. Changes
 are stored as the *difference* from what the recipe declared, so re-importing
 with a better recipe does not keep a stale override alive.
+
+A measure defined on the page can be removed from here, or from either form that
+defines one — the calculator and the comparison form both list them. Removing one
+that another is built on names the dependants instead of doing it.
+
+## Exporting a figure
+
+**Export** in the plot head holds all three: **TikZ**, **SVG**, **PNG**. Every
+facet card, panel and individual chart carries its own TikZ button too, so a
+figure can be taken at whatever scope it is wanted.
+
+The TikZ button opens three things at once, tabbed by what they are rather than
+by filename suffix: *TikZ (drawn)* redraws the figure from coordinates, so it
+needs nothing but `tikz`; *pgfplots (reads the .csv)* is the same figure as an
+`axis` environment; and *the .csv* is the plotted data, so restyling the figure
+never means regenerating it. Note this is the data **as plotted** — filtered,
+aggregated and with derived measures computed — not the file that was imported.
 
 ## Styling a figure
 
@@ -182,6 +202,11 @@ The **Y** control in the plot head sets the scale (auto / linear / log) and the
 range. An empty bound fits the data; a number is used exactly as typed. Values
 outside a hand-set range are clipped to the frame and counted on the chart, so
 you can see how much is not being shown.
+
+The axis controls live in a collapsible **Axes** strip under the plot head
+rather than strung along it: there can be three at once, each with a select and
+two boxes, and inline they crowded out everything beside them. It opens by
+default, because a hidden setting is a lost setting.
 
 **There is one such control per axis the chart actually has.** With a second
 y-axis on, that is **Y left** and **Y right** — a count opposite a rate usually

@@ -202,7 +202,76 @@ console.log('\n=== 4. The edit survives a reload ===');
     w.close();
   }
 
-  console.log('\n=== 7. Coverage counts partial overlap honestly ===');
+  console.log('\n=== 6b. A comparison can be read as a percentage ===');
+{
+  const { w, d } = boot();
+  d.getElementById('derive-toggle').click();
+  const box = d.querySelector('.derive-form');
+  const ops = Array.from(box.querySelectorAll('select')).pop();
+  const labels = Array.from(ops.options).map(o => o.value);
+  ok(labels.indexOf('share') !== -1, 'a share is on offer beside the ratio', labels.join(','));
+
+  w.eval('addDerivedMeasure({op:"share",base:"rateA",over:"variant",a:"tuned",b:"base"})');
+  const m = w.eval('customMeasures()[0]');
+  ok(w.eval('customMeasures()[0].format.key') === 'pct', 'and it is typed as a percentage',
+     w.eval('customMeasures()[0].format.key'));
+  ok(/as % of/.test(w.eval('customMeasures()[0].label')), 'named for what it is',
+     w.eval('customMeasures()[0].label'));
+
+  const ctx = '{dataset:DIM_BY_KEY.dataset.values[0],device:DIM_BY_KEY.device.values[0],'
+    + 'size:DIM_BY_KEY.size.values[1],app:DIM_BY_KEY.app.values[0]}';
+  const key = w.eval('customMeasures()[0].key');
+  const share = w.eval('metricValueAt(Object.assign(' + ctx + ', {metric:"' + key + '"}))');
+  w.eval('addDerivedMeasure({op:"ratio",base:"rateA",over:"variant",a:"tuned",b:"base"})');
+  const rkey = w.eval('customMeasures()[1].key');
+  const ratio = w.eval('metricValueAt(Object.assign(' + ctx + ', {metric:"' + rkey + '"}))');
+  ok(Math.abs(share - ratio * 100) < 1e-9,
+     'the same quotient as the ratio, stored the way a percentage is stored here',
+     share + ' vs ' + ratio);
+  w.close();
+}
+
+console.log('\n=== 6c. A measure defined on the page can be removed from any of its forms ===');
+{
+  const { w, d } = boot();
+  w.eval('addDerivedMeasure({op:"diff",base:"rateA",over:"variant",a:"tuned",b:"base"})');
+  const key = w.eval('customMeasures()[0].key');
+
+  // the comparison form now lists them, as the calculator already did
+  d.getElementById('derive-toggle').click();
+  const inDerive = d.querySelector('.derive-form .formula-defined');
+  ok(!!inDerive, 'the comparison form lists what has been defined');
+  d.getElementById('derive-toggle').click();
+
+  // and the measure editor offers it directly
+  d.getElementById('measures-toggle').click();
+  const rm = d.querySelector('.measure-remove[data-measure="' + key + '"]');
+  ok(!!rm, 'the measure editor offers a Remove');
+  ok(!d.querySelector('.measure-remove[data-measure="rateA"]'),
+     'but only for the page\'s own measures — an imported column is not ours to withdraw');
+  rm.click();
+  ok(!w.eval('METRIC_BY_KEY["' + key + '"]'), 'and it goes');
+  ok(/Removed/.test(d.getElementById('builder-status').textContent), 'with a word about it',
+     d.getElementById('builder-status').textContent);
+  w.close();
+}
+
+console.log('\n=== 6d. Removing something another measure is built on is refused ===');
+{
+  const { w, d } = boot();
+  w.eval('addCustomMeasure({key:"basem",label:"Base m",format:makeFormat("count"),'
+    + 'formula:compileFormula("countA * 2", METRICS, "count")})');
+  w.eval('addCustomMeasure({key:"onTop",label:"On top",format:makeFormat("count"),'
+    + 'formula:compileFormula("[Base m] + 1", METRICS, "count")})');
+  d.getElementById('measures-toggle').click();
+  d.querySelector('.measure-remove[data-measure="basem"]').click();
+  ok(!!w.eval('METRIC_BY_KEY.basem'), 'it stays');
+  ok(/On top/.test(d.getElementById('builder-status').textContent),
+     'and the thing standing on it is named', d.getElementById('builder-status').textContent);
+  w.close();
+}
+
+console.log('\n=== 7. Coverage counts partial overlap honestly ===');
   {
     const { w } = boot();
     const cov = w.eval('JSON.stringify(derivedCoverage(DS, {over:"variant",a:"tuned",b:"base"}))');

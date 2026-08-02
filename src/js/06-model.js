@@ -197,6 +197,9 @@ function derivedValue(ds, ctx, spec) {
   const b = baseValueAt(ds, cb, spec.base, spec.hold);
   if (a === null || b === null) return null;
   if (spec.op === 'reldiff') return b === 0 ? null : ((a - b) / b) * 100;
+  // the same quotient as `ratio`, read as a percentage: stored the way a
+  // percentage is stored everywhere here, 92 rather than 0.92
+  if (spec.op === 'share') return b === 0 ? null : (a / b) * 100;
   if (spec.op === 'ratio') return b === 0 ? null : a / b;
   return a - b;
 }
