@@ -6,7 +6,10 @@ x-axis as nested groups, and plots can be faceted, stacked into panels, or
 rendered as a pivot table. Any figure exports to TikZ, pgfplots + CSV, SVG or
 PNG.
 
-Runs entirely in the browser. No server, no database, nothing uploaded.
+Runs entirely in the browser. No server, no database, nothing uploaded. Light and
+dark follow the system; the **Auto / Light / Dark** switch beside the tabs pins
+one, and Auto means the page keeps following the system rather than freezing
+whatever it is now.
 
 ## This repository holds the tool, never the data
 
@@ -123,6 +126,11 @@ circle or a polygon, and a textured bar is the solid colour with a texture over
 it — both so the appearance survives into TikZ, SVG, PNG and pgfplots rather
 than existing only on screen. The legend swatch becomes a drawn key as soon as
 shape or texture is carrying part of the distinction.
+
+Measures of different kinds are split into panels by default, because a rate and
+a count share no axis. **One shared y-axis** in the plot head overrides that when
+they are comparable after all — a rate and a relative change are both percentages
+— and the chart says what it cost.
 
 The **Y** control in the plot head sets the scale (auto / linear / log) and the
 range. An empty bound fits the data; a number is used exactly as typed. Values

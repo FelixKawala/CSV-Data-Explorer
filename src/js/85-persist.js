@@ -13,6 +13,7 @@ const LS_AUTOSAVE_SHAPE = 'viz-builder-autosave-shape-v1';
 function serializePlots() {
   return plots.map(p => ({
     chartType: p.chartType, repeatPanelAxis: p.repeatPanelAxis, dualAxis: p.dualAxis,
+    forceOneAxis: !!p.forceOneAxis,
     breakLines: p.breakLines, collapseRepeats: p.collapseRepeats,
     yAxis: Object.assign({}, p.yAxis),
     style: cloneStyle(p.style),
@@ -86,6 +87,7 @@ function deserializePlots(cfg) {
       chartType: CHART_TYPES.some(t => t[0] === p.chartType) ? p.chartType : 'bars',
       repeatPanelAxis: !!p.repeatPanelAxis,
       dualAxis: !!p.dualAxis,
+      forceOneAxis: !!p.forceOneAxis,
       breakLines: p.breakLines !== false,
       collapseRepeats: p.collapseRepeats !== false,
       yAxis: normaliseYAxis(p.yAxis),

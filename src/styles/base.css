@@ -1,4 +1,4 @@
-  .viz-root {
+  :root, .viz-root {
     color-scheme: light;
     --surface-1:      #fcfcfb;
     --page:           #f9f9f7;
@@ -30,6 +30,7 @@
     --chip-bg: #f9f9f7; --chip-active-bg: #0b0b0b; --chip-active-fg: #fcfcfb;
   }
   @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])),
     :root:where(:not([data-theme="light"])) .viz-root {
       color-scheme: dark;
       --surface-1:      #1a1a19;
@@ -56,6 +57,7 @@
       --chip-bg: #0d0d0d; --chip-active-bg: #ffffff; --chip-active-fg: #0b0b0b;
     }
   }
+  :root[data-theme="dark"],
   :root[data-theme="dark"] .viz-root {
     color-scheme: dark;
     --surface-1:      #1a1a19;

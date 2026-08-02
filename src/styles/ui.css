@@ -7,6 +7,15 @@
   .mode-tab:hover { color: var(--text-primary); }
   .mode-tab[aria-pressed="true"] { color: var(--text-primary); border-bottom-color: var(--text-primary); font-weight: 600; }
 
+  .mode-tabs { position: relative; }
+  .theme-toggle { margin-left: auto; display: flex; gap: 2px; align-self: center; padding-bottom: 6px; }
+  .theme-btn {
+    font: inherit; font-size: 11px; color: var(--text-muted); background: none;
+    border: 1px solid transparent; border-radius: 6px; padding: 3px 8px; cursor: pointer;
+  }
+  .theme-btn:hover { color: var(--text-primary); }
+  .theme-btn.on { color: var(--text-primary); border-color: var(--border); background: var(--surface-1); }
+
   /* ---- builder toolbar ---- */
   .builder-toolbar {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -282,10 +291,11 @@
 .metric-col .panel-title { display: flex; align-items: center; gap: 8px; }
 .style-block { margin-bottom: 12px; }
 .style-toggle {
-  font: inherit; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
-  color: var(--text-muted); background: none; border: none; padding: 4px 0; cursor: pointer; font-weight: 600;
+  font: inherit; font-size: 12px; color: var(--text-secondary);
+  background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 12px; cursor: pointer; font-weight: 600; margin-top: 10px;
 }
-.style-toggle:hover { color: var(--text-primary); }
+.style-toggle:hover { color: var(--text-primary); border-color: var(--axis); }
 .style-body {
   border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--page);
 }

@@ -468,6 +468,20 @@ console.log('\n=== 15. The review screen splits column names ===');
   await wait(20);
   ok(!!d.getElementById('melt-pattern'), 'switching the split on offers a pattern box');
   ok(importBtn(d).disabled, 'and blocks the import until it says something', outcome(d));
+  // the names are what you write the pattern against, so they are listed first
+  ok(d.querySelectorAll('.melt-preview tbody tr').length === 5,
+     'every column name is listed before anything is typed',
+     d.querySelectorAll('.melt-preview tbody tr').length);
+  ok(/type a pattern above/.test(d.querySelector('.import-reshape .import-summary').textContent),
+     'with an invitation rather than a count of nothing',
+     d.querySelector('.import-reshape .import-summary').textContent);
+
+  setPattern(w, d, 'melt-pattern', '{a}x{a}');
+  await wait(220);
+  ok(d.querySelectorAll('.melt-preview tbody tr').length === 5,
+     'a pattern that will not compile does not take the names away',
+     d.querySelectorAll('.melt-preview tbody tr').length);
+  ok(/used twice/.test(review(d).textContent), 'the error is shown alongside them');
 
   setPattern(w, d, 'melt-pattern', '{device:d}c{threads:d}{variant}');
   await wait(220);          // the input is debounced
@@ -475,7 +489,7 @@ console.log('\n=== 15. The review screen splits column names ===');
   ok(pv.length === 5, 'the preview lists every column name', pv.length);
   ok(d.querySelector('.melt-preview tr[data-name="app"]').classList.contains('melt-miss'),
      '"app" is shown as not matching');
-  ok(/4 of 5 names matched/.test(d.querySelector('.import-reshape .import-summary').textContent),
+  ok(/4 of 5 column names matched/.test(d.querySelector('.import-reshape .import-summary').textContent),
      'and the count is stated', d.querySelector('.import-reshape .import-summary').textContent);
   ok(d.querySelector('.melt-preview tr[data-name="2080c512"]').textContent.indexOf('(empty)') !== -1,
      'an empty capture is shown as empty, not as a blank cell');

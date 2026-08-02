@@ -146,6 +146,7 @@ function drawSeriesLines(plotG, sVals, xVals, lay, sc, getValue, kind, dashed, b
 // with the metric it belongs to, so at least which scale is which is unambiguous.
 function renderDualAxisLeaf(container, spec, asLines) {
   const sVals = spec.series, xVals = spec.x, xDims = spec.xDims, getValue = spec.getValue;
+  const style = spec.style || defaultPlotStyle();
   const kindOf = sv => {
     const mk = sv.vals.metric;
     return (mk && METRIC_BY_KEY[mk]) ? METRIC_BY_KEY[mk].format : spec.kind;
@@ -219,7 +220,16 @@ function renderDualAxisLeaf(container, spec, asLines) {
       html('span', 'legend-cap', g).textContent = title;
       list.forEach(sv => {
         const item = html('div', 'item', g);
-        html('span', 'swatch' + (right ? ' dashed' : ''), item).style.background = sv.color;
+        // the same drawn key as the single-axis legend: on a line chart the
+        // shape is half of what tells the series apart, and a flat square here
+        // would say it was colour alone
+        if (asLines && style.markers !== 'none') {
+          const key = el('svg', { class: 'swatch-svg', width: 14, height: 14, viewBox: '0 0 14 14' });
+          drawMark(key, sv.shape || 'circle', 7, 7, 5, { fill: sv.color, class: 'swatch-mark' });
+          item.appendChild(key);
+        } else {
+          html('span', 'swatch' + (right ? ' dashed' : ''), item).style.background = sv.color;
+        }
         html('span', null, item).textContent = sv.label;
       });
     };

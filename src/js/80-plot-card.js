@@ -106,6 +106,19 @@ function renderPlotCard(plot) {
     lab2.appendChild(cb2);
     html('span', null, lab2).textContent = 'second y-axis';
   }
+  if (headPlan.oneAxisEligible) {
+    const lab5 = html('label', 'head-toggle', head);
+    const cb5 = document.createElement('input');
+    cb5.type = 'checkbox';
+    cb5.className = 'one-axis-toggle';
+    cb5.checked = !!plot.forceOneAxis;
+    cb5.title = 'Draw measures of different kinds against a single y-axis instead of '
+      + 'splitting them into panels. Right when they are comparable — a rate and a '
+      + 'relative change are both percentages — and misleading when they are not.';
+    cb5.addEventListener('change', () => { plot.forceOneAxis = cb5.checked; rerender(); persistPlotsDebounced(); });
+    lab5.appendChild(cb5);
+    html('span', null, lab5).textContent = 'one shared y-axis';
+  }
   if (headPlan.metricPanels) {
     const lab = html('label', 'head-toggle', head);
     const cb = document.createElement('input');
@@ -211,7 +224,7 @@ function renderStyleBlock(container, plot, rerender) {
   const head = html('button', 'style-toggle', block);
   head.type = 'button';
   head.setAttribute('data-plot', String(plot.id));
-  head.textContent = (styleOpen[plot.id] ? '▾ ' : '▸ ') + 'Style';
+  head.textContent = (styleOpen[plot.id] ? '▾' : '▸') + '  Style — colours, shapes, textures';
   head.addEventListener('click', () => { styleOpen[plot.id] = !styleOpen[plot.id]; rerender(); });
   if (!styleOpen[plot.id]) return;
 

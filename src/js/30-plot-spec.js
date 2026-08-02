@@ -68,6 +68,7 @@ function makeDefaultPlot() {
     chartType: 'bars',
     repeatPanelAxis: false,
     dualAxis: false,
+    forceOneAxis: false,
     // null and 'auto' mean "derive it from the data", exactly as before
     yAxis: { min: null, max: null, scale: 'auto' },
     style: defaultPlotStyle(),
@@ -98,6 +99,7 @@ function clonePlot(p) {
     chartType: p.chartType,
     repeatPanelAxis: p.repeatPanelAxis,
     dualAxis: p.dualAxis,
+    forceOneAxis: p.forceOneAxis,
     breakLines: p.breakLines,
     collapseRepeats: p.collapseRepeats,
     yAxis: Object.assign({ min: null, max: null, scale: 'auto' }, p.yAxis),

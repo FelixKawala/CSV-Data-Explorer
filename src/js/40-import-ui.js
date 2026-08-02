@@ -136,6 +136,7 @@ function restagePending() {
 
   // ---- the pattern over each file's own name -------------------------------
   const stems = files.map(f => stemOf(lastSegment(f.path || f.filename)));
+  pend.stemInputs = stems;
   pend.stemPat = pend.path.stem.on ? compilePattern(pend.path.stem) : null;
   pend.stemPreview = pend.stemPat && pend.stemPat.ok ? patternPreview(pend.stemPat, stems) : null;
   pend.stemDims = [];
@@ -156,6 +157,7 @@ function restagePending() {
   files.forEach(f => f.parsed.header.forEach(h => {
     if (rawUnion.indexOf(h) === -1) rawUnion.push(h);
   }));
+  pend.meltInputs = rawUnion;
   pend.meltPat = pend.melt.on ? compilePattern(pend.melt) : null;
   const live = pend.meltPat && pend.meltPat.ok ? pend.meltPat : null;
   pend.meltPreview = live ? patternPreview(live, rawUnion) : null;
@@ -567,7 +569,7 @@ const FORMAT_OPTIONS = () => Object.keys(FORMATS).map(k => [k, k]);
 // A pattern box: the dialect, the text, what it compiled to, and what it did to
 // every name it was given. The preview shows captured values rather than a tick,
 // because a pattern can match and still be wrong.
-function patternBox(host, id, cfg, preview, onChange, subject) {
+function patternBox(host, id, cfg, inputs, onChange, subject) {
   const row = html('div', 'reshape-row', host);
   selectField(row, [['template', 'Template'], ['regex', 'Regular expression']], cfg.kind, v => {
     cfg.kind = v;
@@ -588,14 +590,22 @@ function patternBox(host, id, cfg, preview, onChange, subject) {
   }
   html('div', 'import-note', host).textContent = patternHelp(cfg.kind);
 
-  if (!preview) return;
+  // The list is what you write the pattern AGAINST, so it is shown from the
+  // start and stays put when the pattern is wrong -- the error belongs beside
+  // the names, not instead of them.
+  const live = compiled && compiled.ok ? compiled : null;
+  const preview = patternPreview(live, inputs || []);
   const head = html('div', 'import-summary', host);
-  head.textContent = preview.matched + ' of ' + preview.total + ' ' + subject + ' matched'
-    + (preview.matched < preview.total
-      ? '; ' + (preview.total - preview.matched) + ' left alone' : '');
+  head.textContent = !cfg.text.trim()
+    ? preview.total + ' ' + subject + ' — type a pattern above to split them'
+    : !live
+      ? preview.total + ' ' + subject + ', nothing split yet: the pattern above is not valid'
+      : preview.matched + ' of ' + preview.total + ' ' + subject + ' matched'
+        + (preview.matched < preview.total
+          ? '; ' + (preview.total - preview.matched) + ' left alone' : '');
   const table = html('table', 'melt-preview', host);
   const hr = html('tr', null, html('thead', null, table));
-  html('th', null, hr).textContent = subject === 'names' ? 'Name' : 'File';
+  html('th', null, hr).textContent = subject === 'column names' ? 'Column' : 'File';
   preview.fields.forEach(f => { html('th', null, hr).textContent = f; });
   const tb = html('tbody', null, table);
   preview.rows.slice(0, 40).forEach(r => {
@@ -605,7 +615,7 @@ function patternBox(host, id, cfg, preview, onChange, subject) {
     if (!r.ok) {
       const td = html('td', 'col-profile', tr);
       td.colSpan = Math.max(preview.fields.length, 1);
-      td.textContent = 'no match — kept as it is';
+      td.textContent = live ? 'no match — kept as it is' : '—';
       return;
     }
     preview.fields.forEach(f => {
@@ -631,7 +641,7 @@ function renderReshapeBlock(box, pend) {
   html('span', 'radio-hint', head).textContent = 'e.g. 2080c512kbki is a device, a size and a variant';
   if (!pend.melt.on) return;
 
-  patternBox(wrap, 'melt-pattern', pend.melt, pend.meltPreview, () => refreshReshape(), 'names');
+  patternBox(wrap, 'melt-pattern', pend.melt, pend.meltInputs, () => refreshReshape(), 'column names');
 
   if (pend.meltPreview && pend.meltPreview.matched === 0) {
     html('div', 'import-warn', wrap).textContent =
@@ -700,7 +710,7 @@ function renderPathBlock(box, pend) {
   head.appendChild(cb);
   html('span', null, head).textContent = 'The file names carry dimensions too';
   if (pend.path.stem.on) {
-    patternBox(wrap, 'stem-pattern', pend.path.stem, pend.stemPreview, () => refreshReshape(), 'files');
+    patternBox(wrap, 'stem-pattern', pend.path.stem, pend.stemInputs, () => refreshReshape(), 'file names');
   }
 }
 

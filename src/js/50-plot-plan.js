@@ -16,6 +16,14 @@ function computeAxisPlan(plot) {
   // draw, fall back to stacked panels and say so. A table prints text, so unlike a
   // chart it can hold measures of different scales.
   const mixedKinds = metricActive && groups.length > 1 && plot.chartType !== 'table';
+  const kindNames = groups.map(g => {
+    const m = plot.included[MEASURE_DIM].map(k => METRIC_BY_KEY[k])
+      .filter(x => x && x.format.axisGroup === g)[0];
+    return m ? axisLabelOf(m.format) : g;
+  });
+  // mixedKinds is the fact; splitScales is what we do about it, which the user
+  // can override
+  let splitScales = mixedKinds;
   // Two views of the same thing: `zoneDims` drives the UI and shows the Metric chip
   // wherever the user actually put it (so it stays draggable); `axisDims` drives the
   // chart and pulls Metric out of the axes when it is being drawn as panels.
@@ -34,7 +42,12 @@ function computeAxisPlan(plot) {
     // the differing metrics, and only for exactly two scales
     dualAxis = !!plot.dualAxis && mixedKinds && groups.length === 2
       && mz === 'series' && isCartesian(plot.chartType);
-    forcedPanels = mixedKinds && mz !== PANEL_ZONE.key && !dualAxis;
+    // "One axis" is a decision, not a default: two measures can differ in kind
+    // and still be readable together -- a rate and a relative change are both
+    // percentages, and forcing them apart says they are less comparable than
+    // they are. Splitting them stays the default because usually they are.
+    if (plot.forceOneAxis && mixedKinds && !dualAxis) splitScales = false;
+    forcedPanels = splitScales && mz !== PANEL_ZONE.key && !dualAxis;
     if (mz === PANEL_ZONE.key || forcedPanels) {
       // drawn as panels: Metric is not an axis, each metric becomes its own sub-chart
       metricPanels = plot.included.metric.slice();
@@ -56,7 +69,10 @@ function computeAxisPlan(plot) {
     forcedPanels: forcedPanels,
     dualAxis: dualAxis,
     dualEligible: mixedKinds && groups.length === 2 && isCartesian(plot.chartType),
-    metricKinds: groups,
+    metricKinds: kindNames,
+    // whether an override is on offer, and whether it is doing anything
+    oneAxisEligible: groups.length > 1 && !isGridType(plot.chartType),
+    oneAxisForced: !!plot.forceOneAxis && groups.length > 1 && !dualAxis,
   };
 }
 
@@ -97,7 +113,13 @@ function effectiveKind(plot, fixed) {
   const ignoredDim = (ignored.length === 1 && inPlay.every(mk => measureIgnoresDim(METRIC_BY_KEY[mk], ignored[0])))
     ? ignored[0] : null;
   if (groups.length === 1) return { kind: formats[0], mixed: false, ignoredDim };
-  return { kind: null, mixed: true, kinds: groups, ignoredDim: null };
+  // Forced onto one axis: the first measure's format decides how the axis reads,
+  // and the caller says so on the chart rather than letting it pass unremarked.
+  const named = formats.map(axisLabelOf);
+  if (plot.forceOneAxis) {
+    return { kind: formats[0], mixed: false, ignoredDim, forcedOne: true, kinds: named };
+  }
+  return { kind: null, mixed: true, kinds: named, ignoredDim: null };
 }
 
 // A delta panel drops the Variant dimension (the comparison is already in the metric),
@@ -383,6 +405,11 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
   else if (dual) renderDualAxisLeaf(container, spec, plot.chartType === 'lines');
   else if (plot.chartType === 'lines') renderLineLeaf(container, spec);
   else renderBarLeaf(container, spec);
+  if (kindInfo.forcedOne) {
+    html('div', 'chart-note', container).textContent =
+      'These measures are on different scales (' + kindInfo.kinds.join(' + ')
+      + ') but share one axis, so the smaller of them may be hard to read.';
+  }
   if (dropDim) {
     html('div', 'chart-note', container).textContent =
       DIM_BY_KEY[dropDim].label + ' is not a grouping here — this measure already compares across it.';
