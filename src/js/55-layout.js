@@ -48,41 +48,19 @@ function legendGlyph(item, s, mode) {
   item.appendChild(svg);
 }
 
-// A composite series label repeats every part of the tuple, so with three series
-// dimensions and eight series the legend is eight copies of the same two words
-// plus the one that varies. Whatever every series agrees on is not telling them
-// apart -- it belongs in the caption, not eight times over in the key.
-function trimSeriesLabels(sVals) {
-  const parts = sVals.map(s => (s.labels && s.labels.length) ? s.labels : [s.label]);
-  const n = parts[0] ? parts[0].length : 0;
-  if (n < 2 || parts.some(p => p.length !== n)) {
-    return { labels: sVals.map(s => s.label), shared: [] };
-  }
-  const shared = [];
-  const keep = [];
-  for (let i = 0; i < n; i++) {
-    const first = parts[0][i];
-    if (parts.every(p => p[i] === first)) shared.push(first); else keep.push(i);
-  }
-  if (!keep.length) return { labels: sVals.map(s => s.label), shared: [] };
-  return { labels: parts.map(p => keep.map(i => p[i]).join(SEP)), shared };
-}
-
+// The key names the series in full. Dropping the parts every series agrees on
+// was a mistake: what they agree on is often the measure, and a key that has
+// stopped naming the measure is not saying less, it is saying the wrong thing.
+// A long label is a cost worth paying for one that is right.
 function seriesLegend(container, sVals, seriesDims, style, chartType) {
   if (sVals.length <= 1) return;
   const legend = html('div', 'legend', container);
   const mode = legendMode(sVals, style, chartType);
-  const trimmed = trimSeriesLabels(sVals);
-  sVals.forEach((s, i) => {
+  sVals.forEach(s => {
     const item = html('div', 'item', legend);
     legendGlyph(item, s, mode);
-    const t = html('span', null, item);
-    t.textContent = trimmed.labels[i];
-    if (trimmed.labels[i] !== s.label) t.title = s.label;
+    html('span', 'legend-text', item).textContent = s.label;
   });
-  if (trimmed.shared.length) {
-    html('div', 'legend-shared', legend).textContent = 'all: ' + trimmed.shared.join(SEP);
-  }
 }
 
 // ---- shared cartesian layout (bars, lines, dual-axis all use these) ----

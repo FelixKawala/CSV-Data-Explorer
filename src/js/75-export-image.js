@@ -65,10 +65,7 @@ function cloneWithStyles(srcRoot, win) {
 // as the TikZ exporter does -- a figure without its key is not a figure.
 function legendToSvg(legendEl, win, doc, width, y0) {
   const g = doc.createElementNS(SVGNS, 'g');
-  // `.legend-shared` says what every series has in common. It is part of the
-  // key, not decoration: without it the trimmed labels are missing their
-  // subject, so it exports alongside the items.
-  const items = legendEl.querySelectorAll('.item, .legend-shared');
+  const items = legendEl.querySelectorAll('.item');
   let x = 0;
   let y = y0 + 14;
   let used = 0;

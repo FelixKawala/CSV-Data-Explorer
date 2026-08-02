@@ -17,6 +17,7 @@ function serializePlots() {
     breakLines: p.breakLines, collapseRepeats: p.collapseRepeats,
     yAxis: Object.assign({}, p.yAxis),
     yAxisRight: Object.assign({}, p.yAxisRight),
+    yAxisBy: cloneAxisMap(p.yAxisBy),
     lineAlong: p.lineAlong || null,
     style: cloneStyle(p.style),
     metricBreaks: (p.metricBreaks || []).slice(),
@@ -65,6 +66,14 @@ function normaliseYAxis(a) {
   const scale = a && (a.scale === 'linear' || a.scale === 'log') ? a.scale : 'auto';
   return { min: num(a && a.min), max: num(a && a.max), scale: scale };
 }
+// Keys are axisGroups, which are derived from the data rather than chosen, so a
+// key for a scale this dataset does not have is simply never read.
+function normaliseAxisMap(by) {
+  const out = {};
+  if (!by || typeof by !== 'object') return out;
+  Object.keys(by).forEach(k => { out[k] = normaliseYAxis(by[k]); });
+  return out;
+}
 function migrateMetricZone(p) {
   if (p && METRIC_ZONE_KEYS.indexOf(p.metricZone) !== -1) return p.metricZone;
   if (p && p.metricAxisRole === 'secondary') return 'x';
@@ -94,6 +103,7 @@ function deserializePlots(cfg) {
       collapseRepeats: p.collapseRepeats !== false,
       yAxis: normaliseYAxis(p.yAxis),
       yAxisRight: normaliseYAxis(p.yAxisRight),
+      yAxisBy: normaliseAxisMap(p.yAxisBy),
       // a dimension that no longer exists is not a line to draw along
       lineAlong: GROUPABLE_KEYS.indexOf(p.lineAlong) !== -1 ? p.lineAlong : null,
       style: normalisePlotStyle(p.style),

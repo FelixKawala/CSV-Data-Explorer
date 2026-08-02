@@ -75,6 +75,10 @@ function computeAxisPlan(plot) {
     // whether an override is on offer, and whether it is doing anything
     oneAxisEligible: groups.length > 1 && !isGridType(plot.chartType),
     oneAxisForced: !!plot.forceOneAxis && groups.length > 1 && !dualAxis,
+    // how many y-scales the shown measures need. A frame has two axes, so past
+    // two the second-axis offer is withdrawn -- and the head says why rather
+    // than letting the control vanish without explanation.
+    scaleCount: groups.length,
   };
 }
 
@@ -155,7 +159,28 @@ function innerMetricView(plot, metricKeys) {
     included: Object.assign({}, plot.included, { metric: metricKeys.slice() }),
     metricBreaks: [],
     metricZone: mz,
+    // the scale groups of the WHOLE plot, so a panel can still tell which of
+    // them it is -- it has been narrowed to one and would otherwise look like a
+    // single-scale plot and read the plot-wide axis settings
+    __scaleGroups: plot.__scaleGroups || metricScaleGroups(plot.included[MEASURE_DIM]),
   });
+}
+
+// Which axis settings a panel drawing `format` should use. One scale: the
+// plot-wide Y, exactly as before. Several: the first keeps the plot-wide one
+// (so a range set before a second measure arrived is not lost) and every other
+// scale gets its own -- a maximum of 100 chosen for a percentage has no
+// business bounding a duration drawn underneath it.
+function axisSlotFor(plot, format) {
+  const groups = plot.__scaleGroups || metricScaleGroups(plot.included[MEASURE_DIM] || []);
+  if (!format || !groups || groups.length < 2) return plot.yAxis;
+  const g = format.axisGroup;
+  const firstKey = groups[0] && groups[0][0];
+  const first = firstKey && METRIC_BY_KEY[firstKey];
+  if (first && first.format.axisGroup === g) return plot.yAxis;
+  const by = plot.yAxisBy || (plot.yAxisBy = {});
+  if (!by[g]) by[g] = { min: null, max: null, scale: 'auto' };
+  return by[g];
 }
 
 function metricScaleGroups(keys) {
@@ -431,7 +456,7 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     lineBreaks: lineBreaks, lineRuns: lineRuns,
     colourBy: style.colourBy,
     getValue: getValue, kind: kindInfo.kind,
-    yAxis: plot.yAxis, yAxisRight: plot.yAxisRight,
+    yAxis: axisSlotFor(plot, kindInfo.kind), yAxisRight: plot.yAxisRight,
     style: style, chartType: plot.chartType,
     slots: opts.slots,
     collapseRepeats: plot.collapseRepeats !== false,
@@ -442,7 +467,8 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
       seriesLabels: sVals.map(sv => sv.label),
       // so a pgfplots figure carries the same appearance as the chart on screen
       seriesStyles: sVals.map(sv => ({ color: sv.color, shape: sv.shape, pattern: sv.pattern })),
-      yAxis: plot.yAxis, yAxisRight: plot.yAxisRight, markers: style.markers,
+      yAxis: axisSlotFor(plot, kindInfo.kind), yAxisRight: plot.yAxisRight,
+      markers: style.markers,
       // pgfplots gives one colour per \addplot, so a chart whose colour varies
       // WITHIN a series is something it cannot say. Recorded here so the export
       // can admit the difference rather than quietly drop it.

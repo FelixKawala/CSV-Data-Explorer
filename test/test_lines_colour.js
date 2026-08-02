@@ -114,6 +114,65 @@ console.log('\n=== 3. Each axis has its own range and its own scale ===');
   w.close();
 }
 
+console.log('\n=== 3b. Panels get an axis each, and three scales say why ===');
+{
+  const { w, d } = boot();
+  threeKinds(w);
+  add(d, 'L2 hit rate');
+  add(d, 'Exec time');
+  const tags = () => Array.from(d.querySelectorAll('#plots .yaxis-group'))
+    .map(g => g.getAttribute('data-axis'));
+  ok(w.eval('JSON.stringify(computeAxisPlan(plots[0]).metricPanels)') === '[["l1","l2"],["exectime"]]',
+     'two rates share a panel, the duration has its own');
+  ok(tags().length === 2, 'so there are two sets of axis controls, not one',
+     JSON.stringify(tags()));
+  const caps = Array.from(d.querySelectorAll('#plots .yaxis-label')).map(t => t.textContent);
+  ok(caps.join(' | ') === 'Y · rate % | Y · duration', 'each named by the scale it sets',
+     caps.join(' | '));
+
+  // the second panel's maximum must not be the first panel's
+  const second = d.querySelectorAll('#plots .yaxis-group')[1].querySelectorAll('.yaxis-bound')[1];
+  second.value = '1';
+  fire(w, second);
+  ok(w.eval('plots[0].yAxis.max') === null, 'setting it leaves the first panel alone');
+  ok(w.eval('JSON.stringify(plots[0].yAxisBy)') === '{"duration|s":{"min":null,"max":1,"scale":"auto"}}',
+     'it is stored against the scale, not a position',
+     w.eval('JSON.stringify(plots[0].yAxisBy)'));
+  const ticks = Array.from(d.querySelectorAll('#plots text.axis-label')).map(t => t.textContent);
+  ok(ticks.indexOf('1s') !== -1, 'and the duration panel is drawn to it', ticks.join(','));
+  ok(ticks.some(t => /%$/.test(t)), 'while the rate panel keeps percentages', ticks.join(','));
+
+  w.eval('applyConfig(' + w.eval('JSON.stringify(serializePlots())') + ')');
+  ok(w.eval('plots[0].yAxisBy["duration|s"].max') === 1, 'saved and restored',
+     w.eval('JSON.stringify(plots[0].yAxisBy)'));
+
+  ok(w.eval('computeAxisPlan(plots[0]).dualEligible'),
+     'and with two scales the second axis is still on offer as an alternative');
+  w.close();
+}
+
+console.log('\n=== 3c. Three scales: the second-axis offer is withdrawn, and says so ===');
+{
+  const { w, d } = boot();
+  add(d, 'Count A');          // a rate and a count: two scales
+  ok(w.eval('computeAxisPlan(plots[0]).dualEligible'), 'two scales offer a second axis');
+  ok(Array.from(d.querySelectorAll('#plots .head-toggle')).some(l => /second y-axis/.test(l.textContent)),
+     'and the control is there');
+  ok(!d.querySelector('#plots .head-note'), 'with nothing to explain');
+
+  add(d, 'Δ Rate A');         // a third scale
+  ok(w.eval('computeAxisPlan(plots[0]).scaleCount') === 3, 'now three',
+     w.eval('computeAxisPlan(plots[0]).scaleCount'));
+  ok(!Array.from(d.querySelectorAll('#plots .head-toggle')).some(l => /second y-axis/.test(l.textContent)),
+     'the second-axis control is gone, because a frame has two axes');
+  const note = d.querySelector('#plots .head-note');
+  ok(!!note && /two scales; this shows 3/.test(note.textContent),
+     'and the head says so rather than letting it vanish', note && note.textContent);
+  ok(d.querySelectorAll('#plots .yaxis-group').length === 3, 'with an axis control per scale',
+     d.querySelectorAll('#plots .yaxis-group').length);
+  w.close();
+}
+
 console.log('\n=== 4. Line settings are reachable from a chart that draws lines ===');
 {
   const { w, d } = boot();
@@ -239,26 +298,37 @@ console.log('\n=== 9. The legend shows what the chart actually drew ===');
   w.close();
 }
 
-console.log('\n=== 10. A composite legend label says the varying part ===');
+console.log('\n=== 10. A key names its series in full, at a fixed size ===');
 {
-  const { w } = boot();
-  const same = w.eval('JSON.stringify(trimSeriesLabels(['
-    + '{labels:["dev1","512","base"], label:"dev1 · 512 · base"},'
-    + '{labels:["dev1","512","tuned"], label:"dev1 · 512 · tuned"}]))');
-  const o = JSON.parse(same);
-  ok(o.labels.join(',') === 'base,tuned', 'what every series agrees on is dropped', o.labels.join(','));
-  ok(o.shared.join(',') === 'dev1,512', 'and said once instead', o.shared.join(','));
+  const { w, d } = boot();
+  const labels = () => Array.from(d.querySelectorAll('#plots .legend .item'))
+    .map(i => i.querySelector('.legend-text').textContent);
+  // two metrics with Metric in the series: every label ends in the metric name,
+  // and shortening the labels by dropping what they share took it away
+  add(d, 'Rate B');
+  metricTo(w, d, 'series');
+  const plain = labels();
+  ok(plain.every(t => /Rate A|Rate B/.test(t)), 'the measure is named on every key', plain.join(' | '));
 
-  const allDiff = JSON.parse(w.eval('JSON.stringify(trimSeriesLabels(['
-    + '{labels:["a"], label:"a"},{labels:["b"], label:"b"}]))'));
-  ok(allDiff.labels.join(',') === 'a,b' && allDiff.shared.length === 0,
-     'nothing is dropped when nothing is shared');
-  const single = JSON.parse(w.eval('JSON.stringify(trimSeriesLabels(['
-    + '{labels:["x"], label:"x"},{labels:["x"], label:"x"}]))'));
-  ok(single.labels.join(',') === 'x,x',
-     'and two series that read alike keep their labels rather than losing them both',
-     single.labels.join(','));
+  // and it survives the swatch becoming a drawn shape
+  setType(w, d, 'lines');
+  const shaped = labels();
+  ok(d.querySelectorAll('#plots .legend .swatch-svg').length > 0, 'the key is a drawn shape now');
+  ok(shaped.every(t => t.length > 0), 'and every one still has its label', shaped.join(' | '));
+  ok(shaped.join('|') === plain.join('|'), 'saying exactly what it said before', shaped.join(' | '));
   w.close();
+}
+
+console.log('\n=== 10b. The drawn swatch has a size in CSS, not only in markup ===');
+{
+  // An <svg> sized only by its width/height ATTRIBUTES has no CSS size, and as
+  // a flex item it lays out from its default 300x150 -- so the key took the
+  // whole row and squeezed its own label to nothing.
+  const CSS = HTML.slice(HTML.indexOf('<style'), HTML.indexOf('</style>'));
+  const rule = (CSS.match(/\.legend \.swatch-svg \{[^}]*\}/) || [''])[0];
+  ok(/width:\s*\d/.test(rule) && /height:\s*\d/.test(rule),
+     'the swatch is sized in CSS', rule.trim());
+  ok(/flex:\s*0 0 auto/.test(rule), 'and cannot grow', rule.trim());
 }
 
 console.log('\n=== 11. Both keys reach every export ===');

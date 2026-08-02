@@ -167,9 +167,7 @@ function legendPatternKey(swSvg) {
 // the picture underneath the plot: a figure without its key is not a figure.
 function legendToTikz(legendEl, win, y0, width) {
   const out = [];
-  // `.legend-shared` carries what the trimmed labels have in common; without it
-  // the key names a series by only the part that varies.
-  const items = legendEl.querySelectorAll('.item, .legend-shared');
+  const items = legendEl.querySelectorAll('.item');
   if (!items.length) return out;
   let x = 0, y = y0 + 14, rowH = 14;
   for (let i = 0; i < items.length; i++) {

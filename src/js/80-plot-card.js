@@ -73,10 +73,9 @@ function renderPlotCard(plot) {
   // The second axis of a dual-axis chart is a different measure on a different
   // scale, so it gets the same controls rather than being told to fit its data:
   // a count opposite a rate usually wants log where the rate wants linear.
-  const axisControls = (which, caption, hint) => {
-    const ax = plot[which] || (plot[which] = { min: null, max: null, scale: 'auto' });
+  const axisControls = (ax, tag, caption, hint) => {
     const grp = html('span', 'yaxis-group', head);
-    grp.setAttribute('data-axis', which);
+    grp.setAttribute('data-axis', tag);
     const cap = html('span', 'yaxis-label', grp);
     cap.textContent = caption;
     if (hint) cap.title = hint;
@@ -118,22 +117,48 @@ function renderPlotCard(plot) {
       reset.type = 'button'; reset.className = 'btn small'; reset.textContent = 'auto';
       reset.title = 'Back to fitting the data';
       reset.addEventListener('click', () => {
-        plot[which] = { min: null, max: null, scale: 'auto' };
+        // in place, because the object may be a slot inside yAxisBy that the
+        // chart already holds a reference to
+        ax.min = null; ax.max = null; ax.scale = 'auto';
         rerender(); persistPlotsDebounced();
       });
       grp.appendChild(reset);
     }
   };
   if (plot.chartType !== 'matrix' && plot.chartType !== 'table') {
-    const twoAxes = headPlan.dualAxis;
-    axisControls('yAxis', twoAxes ? 'Y left' : 'Y',
-      twoAxes ? 'The axis the ' + (headPlan.metricKinds[0] || 'first') + ' series are drawn against' : '');
-    if (twoAxes) {
-      axisControls('yAxisRight', 'Y right',
+    if (!plot.yAxis) plot.yAxis = { min: null, max: null, scale: 'auto' };
+    if (!plot.yAxisRight) plot.yAxisRight = { min: null, max: null, scale: 'auto' };
+    const panels = headPlan.metricPanels;
+    if (headPlan.dualAxis) {
+      axisControls(plot.yAxis, 'yAxis', 'Y left',
+        'The axis the ' + (headPlan.metricKinds[0] || 'first') + ' series are drawn against');
+      axisControls(plot.yAxisRight, 'yAxisRight', 'Y right',
         'The axis the ' + (headPlan.metricKinds[1] || 'second') + ' series are drawn against');
+    } else if (panels && panels.length > 1) {
+      // The chart is several panels, each with its own y-scale, so one set of
+      // controls for all of them was the wrong shape: a maximum meant for the
+      // percentages was also bounding the durations underneath. One per scale.
+      panels.forEach(g => {
+        const m = METRIC_BY_KEY[g[0]];
+        if (!m) return;
+        axisControls(axisSlotFor(plot, m.format), 'scale:' + m.format.axisGroup,
+          'Y · ' + axisLabelOf(m.format),
+          'The panel holding ' + g.map(k => METRIC_BY_KEY[k].label).join(', '));
+      });
+    } else {
+      axisControls(plot.yAxis, 'yAxis', 'Y', '');
     }
   }
 
+  // Three scales is where the second-axis offer used to disappear without a
+  // word. A frame has two axes; say so, rather than leaving the control the
+  // user had a moment ago simply gone.
+  if (!headPlan.dualEligible && headPlan.scaleCount > 2 && isCartesian(plot.chartType)) {
+    const hint = html('span', 'head-note', head);
+    hint.textContent = 'a second y-axis takes two scales; this shows ' + headPlan.scaleCount;
+    hint.title = headPlan.metricKinds.join(', ')
+      + ' — drop one from Data shown to use a second axis, or read them as the panels below.';
+  }
   if (headPlan.dualEligible) {
     const lab2 = html('label', 'head-toggle', head);
     const cb2 = document.createElement('input');

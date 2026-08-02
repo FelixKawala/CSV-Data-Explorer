@@ -76,6 +76,10 @@ function makeDefaultPlot() {
     // rate is the whole reason the second axis exists, and a count usually wants
     // log where the rate wants linear.
     yAxisRight: { min: null, max: null, scale: 'auto' },
+    // Per-scale settings, keyed by axisGroup, for a chart drawn as one panel
+    // per scale. The first scale keeps `yAxis`, so a plot with one measure
+    // behaves exactly as it always did.
+    yAxisBy: {},
     style: defaultPlotStyle(),
     // "start a new group after this metric", keyed rather than indexed so it
     // survives adding, removing and reordering the metrics around it
@@ -98,6 +102,11 @@ function cloneIncluded(inc) {
   DIM_KEYS.forEach(k => { out[k] = inc[k].slice(); });
   return out;
 }
+function cloneAxisMap(by) {
+  const out = {};
+  Object.keys(by || {}).forEach(k => { out[k] = Object.assign({ min: null, max: null, scale: 'auto' }, by[k]); });
+  return out;
+}
 function cloneZones(z) {
   const out = {};
   ZONE_KEYS.forEach(k => { out[k] = z[k].slice(); });
@@ -114,6 +123,7 @@ function clonePlot(p) {
     collapseRepeats: p.collapseRepeats,
     yAxis: Object.assign({ min: null, max: null, scale: 'auto' }, p.yAxis),
     yAxisRight: Object.assign({ min: null, max: null, scale: 'auto' }, p.yAxisRight),
+    yAxisBy: cloneAxisMap(p.yAxisBy),
     style: normalisePlotStyle(p.style),
     lineAlong: p.lineAlong || null,
     metricBreaks: (p.metricBreaks || []).slice(),

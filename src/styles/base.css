@@ -125,18 +125,20 @@
   }
 
   /* A key is a lookup table, not a paragraph: it should cost as little vertical
-     room as it can and still be readable. A drawn swatch (a shape or a texture)
-     is taller than a 10px square, so without a fixed line box every legend with
-     one grew by half a line per row. */
+     room as it can and still be readable. */
   .legend {
     display: flex; gap: 4px 14px; flex-wrap: wrap; margin: 2px 0 4px;
     font-size: 11.5px; line-height: 14px;
   }
-  .legend .item { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); min-width: 0; }
-  .legend .item > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22ch; }
+  .legend .item { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); }
   .legend .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
-  /* what every series has in common, said once instead of once per series */
-  .legend-shared { flex-basis: 100%; color: var(--text-muted); font-size: 11px; }
+  /* An <svg> whose size comes only from its width/height ATTRIBUTES has no CSS
+     size, and as a flex item it is laid out from its default 300x150 -- so a
+     key that was a drawn shape or a texture took over the whole legend row and
+     squeezed the label it belongs to down to nothing. The size has to be in
+     CSS, not only in the markup. */
+  .legend .swatch-svg { flex: 0 0 auto; width: 12px; height: 12px; display: block; }
+  .legend .legend-text { white-space: nowrap; }
 
   .empty-state {
     text-align: center; color: var(--text-muted); font-size: 13.5px;

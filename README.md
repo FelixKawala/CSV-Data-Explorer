@@ -155,7 +155,10 @@ print or a reader with a colour vision deficiency. Every shape is drawn as a
 circle or a polygon, and a textured bar is the solid colour with a texture over
 it — both so the appearance survives into TikZ, SVG, PNG and pgfplots rather
 than existing only on screen. The legend swatch becomes a drawn key as soon as
-shape or texture is carrying part of the distinction.
+shape or texture is carrying part of the distinction — including when only one
+series carries it, since what a series is drawn *with* is the only thing that
+decides. A key names its series in full: shortening the labels by dropping what
+they all share reads well right up until the thing they share is the measure.
 
 Measures of different kinds are split into panels — **one panel per scale, not
 one per measure**, so two hit rates share an axis and a duration gets its own.
@@ -178,11 +181,19 @@ that it cannot reproduce it.
 The **Y** control in the plot head sets the scale (auto / linear / log) and the
 range. An empty bound fits the data; a number is used exactly as typed. Values
 outside a hand-set range are clipped to the frame and counted on the chart, so
-you can see how much is not being shown. With a **second y-axis** on there are
-two such controls, **Y left** and **Y right** — a count opposite a rate usually
-wants log where the rate wants linear. The second axis takes a *scale*, not a
-measure: two hit rates and a duration put both rates on the left and the
-duration on the right, rather than the third measure going undrawn.
+you can see how much is not being shown.
+
+**There is one such control per axis the chart actually has.** With a second
+y-axis on, that is **Y left** and **Y right** — a count opposite a rate usually
+wants log where the rate wants linear. When the chart is drawn as panels there
+is one per *scale*, labelled `Y · rate %`, `Y · duration`, and stored against
+the scale rather than a position: a maximum meant for the percentages has no
+business bounding the durations underneath them.
+
+The second axis takes a *scale*, not a measure: two hit rates and a duration put
+both rates on the left and the duration on the right, rather than the third
+measure going undrawn. Past two scales it is withdrawn — a frame has two axes —
+and the head says so instead of the control simply disappearing.
 
 A chart that draws lines offers the line and marker settings whether or not it
 is a line chart — a bar chart with a second axis draws its right-hand series as
