@@ -21,6 +21,7 @@ function makeMemoryStore() {
     async list() {
       return Array.from(datasets.values()).map(d => ({
         id: d.id, name: d.name, createdAt: d.createdAt, recipe: d.recipe, sources: d.sources,
+        parts: d.parts,
       }));
     },
     async get(id) { return datasets.get(id) || null; },
@@ -193,8 +194,19 @@ function fillCell(recipe) {
   return recipe.fill === undefined || recipe.fill === null ? '' : String(recipe.fill);
 }
 
-function datasetFromRecord(rec) {
-  const recipe = rec.recipe;
+// A record holds either one recipe over its own files, or several parts, each
+// with its own recipe over its own files -- which is what combining two stored
+// datasets produces. One part is the degenerate case and takes the same path.
+function recordParts(rec) {
+  if (Array.isArray(rec.parts) && rec.parts.length) {
+    return rec.parts.map(p => ({
+      name: p.name, recipe: p.recipe || {}, sources: p.sources || [],
+    }));
+  }
+  return [{ name: rec.name, recipe: rec.recipe || {}, sources: rec.sources || [] }];
+}
+
+function buildPartSpec(recipe, srcList) {
   const cols = recipe.columns || [];
   const melt = compileMeltPlan(recipe.melt);
   const pathPlan = compilePathPlan(recipe.path);
@@ -224,7 +236,7 @@ function datasetFromRecord(rec) {
   }
   let usedFallback = false;
 
-  rec.sources.forEach(srcRec => {
+  srcList.forEach(srcRec => {
     const parsed = parseCsv(srcRec.text, recipe.parse);
     const raw = parsed.header;              // the melt matches these
     const header = dedupeHeader(parsed.header);   // id columns are found by these
@@ -343,10 +355,75 @@ function datasetFromRecord(rec) {
     }));
   }
 
-  const ds = makeDataset({ name: rec.name, dims, measures, rows });
+  return { dims: dims, measures: measures, rows: rows };
+}
+
+// Several parts become one dataset on the union of their dimensions and their
+// measures. A row from a part that has not got a dimension takes the fill value
+// for it -- the same rule, and the same reason, as a file missing a column
+// inside one part: a tuple that cannot be coded is dropped whole.
+function mergeSpecs(specs, parts, recipe) {
+  const gap = (recipe.fill === undefined || recipe.fill === null ? 'n/a' : String(recipe.fill)).trim();
+  const dims = [];
+  const dimAt = {};
+  const measures = [];
+  const mAt = {};
+  const rows = [];
+  const partDim = recipe.partDim || null;
+  if (partDim) {
+    dimAt[partDim] = 0;
+    dims.push({ key: partDim, label: recipe.partLabel || 'Dataset',
+      values: parts.map(p => p.name) });
+  }
+  specs.forEach(spec => {
+    spec.dims.forEach(d => {
+      if (dimAt[d.key] === undefined) {
+        dimAt[d.key] = dims.length;
+        dims.push({ key: d.key, label: d.label, values: d.values.slice(),
+          labelOverride: d.labelOverride });
+        return;
+      }
+      // Same key, so the same dimension: the domains are unioned in the order
+      // they were declared. This holds for the Dataset dimension too, where a
+      // part that already had one of its own simply widens it.
+      const into = dims[dimAt[d.key]].values;
+      d.values.forEach(v => { if (into.indexOf(v) === -1) into.push(v); });
+    });
+    // First declaration wins: two parts calling a measure the same thing are
+    // taken at their word, and the second one's label and format are its own
+    // business only where the first said nothing.
+    spec.measures.forEach(m => {
+      if (mAt[m.key] !== undefined) return;
+      mAt[m.key] = measures.length;
+      measures.push(m);
+    });
+  });
+  specs.forEach((spec, i) => {
+    const name = parts[i].name;
+    const have = {};
+    spec.dims.forEach(d => { have[d.key] = true; });
+    const missing = dims.filter(d => d.key !== partDim && !have[d.key]);
+    missing.forEach(d => { if (d.values.indexOf(gap) === -1) d.values.push(gap); });
+    spec.rows.forEach(row => {
+      if (partDim) row[partDim] = name;
+      missing.forEach(d => { row[d.key] = gap; });
+      rows.push(row);
+    });
+  });
+  return { dims: dims, measures: measures, rows: rows };
+}
+
+function datasetFromRecord(rec) {
+  const parts = recordParts(rec);
+  const recipe = rec.recipe || {};
+  const specs = parts.map(p => buildPartSpec(p.recipe, p.sources));
+  const spec = specs.length === 1 ? specs[0] : mergeSpecs(specs, parts, recipe);
+  const ds = makeDataset({ name: rec.name, dims: spec.dims, measures: spec.measures, rows: spec.rows });
   applyMeasureOverrides(ds, recipe.measureOverrides);
   attachCustomMeasures(ds, recipe.custom);
-  attachSourceText(ds, rec.sources);
+  const allSources = [];
+  parts.forEach(p => p.sources.forEach(s => allSources.push(s)));
+  attachSourceText(ds, allSources);
   return ds;
 }
 
@@ -406,20 +483,91 @@ function persistMeasureOverrides() {
 // What a stored recipe will produce, without building it. The dataset cards on
 // the Data tab count dimensions and measures, and with a reshape those no
 // longer live in `columns` alone -- so both readings come from here.
-function recipeShape(recipe) {
+function recipeNames(recipe) {
   const cols = (recipe && recipe.columns) || [];
-  let dimCount = cols.filter(c => c.role === 'dimension').length;
-  let measureCount = cols.filter(c => c.role === 'measure').length;
-  if (recipe && recipe.sourceDim) dimCount++;
+  const dims = [];
+  const measures = [];
+  if (recipe && recipe.sourceDim) dims.push(recipe.sourceDim);
   const pathPlan = compilePathPlan(recipe && recipe.path);
-  if (pathPlan) dimCount += pathPlan.dims.length;
+  if (pathPlan) pathPlan.dims.forEach(d => dims.push(d.key));
+  cols.forEach(c => {
+    if (c.role === 'dimension') dims.push(c.name);
+    else if (c.role === 'measure') measures.push(c.name);
+  });
   const melt = compileMeltPlan(recipe && recipe.melt);
   if (melt) {
-    dimCount += melt.dims.length;
+    melt.dims.forEach(d => dims.push(d.key));
     // the fallback may or may not be used; count declared levels, or one
-    measureCount += melt.declared.length || 1;
+    if (melt.declared.length) melt.declared.forEach(m => measures.push(m.key));
+    else measures.push(melt.fallback.key);
   }
-  return { dims: dimCount, measures: measureCount };
+  return { dims: dims, measures: measures };
+}
+function recipeShape(recipe) {
+  const n = recipeNames(recipe);
+  return { dims: n.dims.length, measures: n.measures.length };
+}
+
+// The same question for a whole record, which may be several parts merged on
+// the union of their names -- so it counts distinct names rather than adding
+// the parts' totals up.
+function recordShape(rec) {
+  const parts = recordParts(rec);
+  if (parts.length === 1) return Object.assign(recipeShape(parts[0].recipe), { parts: 1, files: parts[0].sources.length });
+  const dims = {}, measures = {};
+  let files = 0;
+  parts.forEach(p => {
+    const n = recipeNames(p.recipe);
+    n.dims.forEach(k => { dims[k] = 1; });
+    n.measures.forEach(k => { measures[k] = 1; });
+    files += p.sources.length;
+  });
+  if (rec.recipe && rec.recipe.partDim) dims[rec.recipe.partDim] = 1;
+  return { dims: Object.keys(dims).length, measures: Object.keys(measures).length,
+    parts: parts.length, files: files };
+}
+
+// Several stored datasets as one. The parts keep their own recipes, because
+// that is what makes this possible at all: they were imported from different
+// files with different columns and, after a melt, possibly different shapes.
+// Nothing is re-read -- the raw text is already stored, and the merge happens
+// where every recipe has already been replayed.
+function combineDatasets(ids, opts) {
+  const o = opts || {};
+  return Promise.all((ids || []).map(id => STORE.get(id))).then(got => {
+    const recs = got.filter(Boolean);
+    if (recs.length < 2) return null;
+    const parts = [];
+    const custom = [];
+    const overrides = {};
+    recs.forEach(r => {
+      // combining something already combined takes its parts, not a nesting
+      recordParts(r).forEach(p => parts.push(p));
+      ((r.recipe || {}).custom || []).forEach(c => {
+        if (c && c.key && !custom.some(x => x.key === c.key)) custom.push(c);
+      });
+      const ov = (r.recipe || {}).measureOverrides || {};
+      Object.keys(ov).forEach(k => { if (overrides[k] === undefined) overrides[k] = ov[k]; });
+    });
+    const rec = {
+      id: newDatasetId(),
+      name: o.name || recs.map(r => r.name).join(' + '),
+      createdAt: Date.now(),
+      recipe: {
+        combined: true,
+        fill: o.fill === undefined ? 'n/a' : o.fill,
+        partDim: o.partDim === false ? null : '__dataset',
+        partLabel: o.partLabel || 'Dataset',
+        custom: custom,
+        measureOverrides: overrides,
+      },
+      sources: [],
+      parts: parts,
+    };
+    // built before it is stored: a record that cannot be rebuilt is not saved
+    const ds = datasetFromRecord(rec);
+    return Promise.resolve(STORE.put(rec)).then(() => ({ rec: rec, ds: ds }));
+  });
 }
 
 // ---- measures the user defined on the page ---------------------------------

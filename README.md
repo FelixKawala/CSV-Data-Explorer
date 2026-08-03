@@ -52,6 +52,23 @@ empty, `0` fills both in. The filled value is a value of its dimension like any
 other, which is the point: without one, every row of the file that lacks the
 column falls outside the declared domain and is dropped whole.
 
+### Stored datasets
+
+Every import is kept as its raw text plus its recipe, listed on the Data tab.
+A dataset can be **renamed** there — click the name — since it arrives called
+after the file it came from, which says where the bytes are from and nothing
+about what they are.
+
+Tick two or more and **Combine** merges them into one new dataset, keeping the
+originals. Each part keeps its own recipe, which is what makes this possible at
+all: they were imported from different files, with different columns and
+possibly different reshapes. The result is the union of their dimensions and
+their measures, with the same fill rule as above for what a part has not got,
+and a **Dataset** dimension naming which part each row came from — without it,
+rows that agree on every other dimension would be averaged together. Combining
+something already combined flattens rather than nests. Comparison and calculated
+measures defined on the parts come along.
+
 ### When the CSV is not tidy
 
 Dimensions often live outside the rows: in the column names, or in the folders

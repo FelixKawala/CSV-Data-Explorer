@@ -15,6 +15,9 @@
 let pendingImport = null;
 let dataStatus = '';
 let reshapeTimer = null;
+// Which stored datasets are ticked for combining. Module-level, because the
+// list is re-rendered on every change and the ticks have to outlive that.
+const datasetPicks = {};
 
 // Storage and file reads are async, so a handler can land after the page is gone.
 // Every DOM touch behind a promise checks first.
@@ -533,9 +536,24 @@ function renderDatasetList(host) {
     if (!domAlive() || !records || !records.length) return;
     html('h4', null, wrap).textContent = 'Stored datasets';
     const active = activeDatasetId();
+    // a tick that outlived its dataset would silently combine the wrong things
+    Object.keys(datasetPicks).forEach(id => {
+      if (!records.some(r => r.id === id)) delete datasetPicks[id];
+    });
     records.forEach(rec => {
       const card = html('div', 'dataset-card' + (rec.id === active ? ' active' : ''), wrap);
       card.setAttribute('data-id', rec.id);
+      const pick = document.createElement('input');
+      pick.type = 'checkbox';
+      pick.className = 'dataset-pick';
+      pick.id = 'dataset-pick-' + rec.id;
+      pick.checked = !!datasetPicks[rec.id];
+      pick.title = 'Select to combine with another dataset';
+      pick.addEventListener('change', () => {
+        if (pick.checked) datasetPicks[rec.id] = true; else delete datasetPicks[rec.id];
+        renderDataPanel();
+      });
+      card.appendChild(pick);
       const title = html('div', 'dataset-name', card);
       title.textContent = rec.name;
       // Renaming swaps the caption for a field in place rather than opening
@@ -569,10 +587,11 @@ function renderDatasetList(host) {
       title.title = 'Click to rename';
       title.addEventListener('click', startRename);
       const meta = html('div', 'dataset-meta', card);
-      const shape = recipeShape(rec.recipe);
+      const shape = recordShape(rec);
       meta.textContent = shape.dims + ' dimension' + (shape.dims === 1 ? '' : 's') + ' · '
         + shape.measures + ' measure' + (shape.measures === 1 ? '' : 's') + ' · '
-        + rec.sources.length + ' file' + (rec.sources.length === 1 ? '' : 's');
+        + shape.files + ' file' + (shape.files === 1 ? '' : 's')
+        + (shape.parts > 1 ? ' · combined from ' + shape.parts + ' datasets' : '');
       const acts = html('div', 'dataset-actions', card);
       const open = document.createElement('button');
       open.type = 'button'; open.className = 'btn small'; open.textContent = 'Open';
@@ -587,7 +606,70 @@ function renderDatasetList(host) {
       del.addEventListener('click', () => deleteDataset(rec.id));
       acts.appendChild(del);
     });
+    renderCombineBar(wrap, records);
   }).catch(() => {});
+}
+
+// Two or more picked: what combining them would produce, and the button that
+// does it. It appears only once there is something to combine, because a form
+// that is disabled nine visits in ten is furniture.
+function renderCombineBar(wrap, records) {
+  const picked = records.filter(r => datasetPicks[r.id]);
+  if (picked.length < 2) {
+    if (picked.length === 1) {
+      html('div', 'dataset-hint', wrap).textContent =
+        'Tick a second dataset to combine it with "' + picked[0].name + '".';
+    }
+    return;
+  }
+  const bar = html('div', 'dataset-combine', wrap);
+  bar.id = 'dataset-combine';
+  html('div', 'dim-label', bar).textContent = 'Combine ' + picked.length + ' datasets';
+  html('div', 'import-note', bar).textContent =
+    picked.map(r => r.name).join(' + ') + ' — rows appended on the union of their '
+    + 'dimensions and measures. What one of them has not got is filled in; the '
+    + 'originals are kept.';
+
+  const nameRow = html('label', 'radio-row', bar);
+  html('span', null, nameRow).textContent = 'Call it';
+  const nameInput = textField(nameRow, 'combine-name', picked.map(r => r.name).join(' + '),
+    () => {});
+
+  const dimRow = html('label', 'radio-row', bar);
+  const dimCb = document.createElement('input');
+  dimCb.type = 'checkbox'; dimCb.checked = true; dimCb.id = 'combine-dim';
+  dimRow.appendChild(dimCb);
+  html('span', null, dimRow).textContent = 'add a Dataset dimension naming each';
+  html('span', 'radio-hint', dimRow).textContent =
+    'without it, rows that agree on every dimension are averaged together';
+
+  const fillRow = html('label', 'radio-row', bar);
+  html('span', null, fillRow).textContent = 'Fill what one of them has not got with';
+  const fillInput = textField(fillRow, 'combine-fill', 'n/a', () => {});
+
+  const go = document.createElement('button');
+  go.type = 'button'; go.className = 'btn primary'; go.textContent = 'Combine';
+  go.addEventListener('click', () => {
+    go.disabled = true;
+    combineDatasets(picked.map(r => r.id), {
+      name: nameInput.value.trim() || picked.map(r => r.name).join(' + '),
+      partDim: dimCb.checked,
+      fill: fillInput.value,
+    }).then(made => {
+      if (!made) { setDataStatus('Could not combine those datasets.'); renderDataPanel(); return; }
+      Object.keys(datasetPicks).forEach(k => delete datasetPicks[k]);
+      setActiveDatasetId(made.rec.id);
+      startWithDataset(made.ds);
+      setDataStatus('Combined into "' + made.rec.name + '" — '
+        + made.ds.nRows + ' rows over ' + made.ds.dims.length + ' dimensions.');
+      renderDataPanel();
+      showMode('builder');
+    }).catch(e => {
+      setDataStatus('Could not combine those datasets: ' + e.message);
+      renderDataPanel();
+    });
+  });
+  html('div', 'import-actions', bar).appendChild(go);
 }
 
 // ---- the review -------------------------------------------------------------
