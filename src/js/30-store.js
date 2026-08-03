@@ -325,7 +325,32 @@ function datasetFromRecord(rec) {
   const ds = makeDataset({ name: rec.name, dims, measures, rows });
   applyMeasureOverrides(ds, recipe.measureOverrides);
   attachCustomMeasures(ds, recipe.custom);
+  attachSourceText(ds, rec.sources);
   return ds;
+}
+
+// The files as imported, kept beside the dataset so a figure can be exported
+// with its source rather than only with the numbers that were plotted.
+//
+// Capped, because this is the one thing here that holds a second copy of every
+// byte the user handed over: a folder import is already the way to make this
+// page fall over, and a hundred files behind a figure would be a hundred tabs
+// nobody wants anyway.
+const SOURCE_KEEP_FILES = 8;
+const SOURCE_KEEP_BYTES = 4 * 1024 * 1024;
+function attachSourceText(ds, sources) {
+  if (!Array.isArray(sources) || !sources.length) return;
+  let bytes = 0;
+  sources.forEach(s => { bytes += String(s.text || '').length; });
+  if (sources.length > SOURCE_KEEP_FILES || bytes > SOURCE_KEEP_BYTES) {
+    ds.sourcesNote = sources.length + ' imported files (' + Math.round(bytes / 1024)
+      + ' KB) — too many to attach to a figure.';
+    return;
+  }
+  ds.sources = sources.map(s => ({
+    name: s.filename || s.path || 'source.csv',
+    text: String(s.text || ''),
+  }));
 }
 
 // A name or a format the user changed after importing. Stored as the

@@ -340,17 +340,75 @@ console.log('\n=== 6g. A measure flat along the facets is drawn once, not per fa
   ok(note.some(t => /does not vary by GPU/.test(t) && /drawn once/.test(t)),
      'with the reason stated', note.join(' | '));
 
-  const parts = d.querySelectorAll('#plots .plot-part');
-  ok(parts[0].querySelectorAll('.facet-card').length === 0,
+  // parts follow the order of "Data shown", so they are found by what is in them
+  const parts = Array.from(d.querySelectorAll('#plots .plot-part'));
+  const flat = parts.find(p => /does not vary by GPU/.test(p.textContent));
+  const varying = parts.find(p => p !== flat);
+  ok(flat.querySelectorAll('.facet-card').length === 0,
      'the comparison is not faceted at all');
-  ok(parts[0].querySelectorAll('svg').length === 1, 'one chart for it',
-     parts[0].querySelectorAll('svg').length);
-  ok(parts[1].querySelectorAll('.facet-card').length === 2,
+  ok(flat.querySelectorAll('svg').length === 1, 'one chart for it',
+     flat.querySelectorAll('svg').length);
+  ok(varying.querySelectorAll('.facet-card').length === 2,
      'while the duration still gets a chart per GPU',
-     parts[1].querySelectorAll('.facet-card').length);
+     varying.querySelectorAll('.facet-card').length);
   ok(d.querySelectorAll('#plots rect.bar').length === 6,
      '2 comparison bars once, plus 2 durations in each of 2 facets — not 8',
      d.querySelectorAll('#plots rect.bar').length);
+  w.close();
+}
+
+console.log('\n=== 6h. Two facet dimensions, and a measure flat along only one ===');
+{
+  // "Flat along ALL the facet dimensions" was not enough: with GPU and App both
+  // faceting, a comparison over GPU is flat along one and not the other, so it
+  // failed the test and went back in with the rest. The measures are grouped by
+  // WHICH facet dimensions they are flat along, and each group drawn as its own.
+  const { w, d } = boot();
+  w.eval('setStore(makeMemoryStore());');
+  const rows = [];
+  ['A', 'B'].forEach(app => ['2080', '4070'].forEach(gpu => ['512', '256'].forEach(t => {
+    const a = app.charCodeAt(0) - 65;
+    rows.push([app, gpu, t, (60 + a * 3 + (gpu === '4070' ? 8 : 0) + Number(t) / 100).toFixed(2),
+      (0.4 + a * 0.07 + Number(t) / 10000 + (gpu === '4070' ? -0.05 : 0)).toFixed(3)].join(','));
+  })));
+  const rec = { id: 'r', name: 'r',
+    sources: [{ filename: 'r.csv', text: 'app,gpu,threads,l1,exectime\n' + rows.join('\n') + '\n' }],
+    recipe: { columns: [
+      { source: 'app', name: 'app', label: 'App', role: 'dimension' },
+      { source: 'gpu', name: 'gpu', label: 'GPU', role: 'dimension' },
+      { source: 'threads', name: 'threads', label: 'Threads', role: 'dimension' },
+      { source: 'l1', name: 'l1', label: 'L1 hit rate', role: 'measure', format: 'pct' },
+      { source: 'exectime', name: 'exectime', label: 'Exec time', role: 'measure', format: 'duration' }] } };
+  w.eval('startWithDataset(datasetFromRecord(' + JSON.stringify(rec) + '))');
+  w.eval('addDerivedMeasure({op:"share",base:"l1",over:"gpu",a:"2080",b:"4070"})');
+  const key = w.eval('customMeasures()[0].key');
+
+  w.eval('plots[0].included.metric = ["exectime","' + key + '"];'
+    + 'plots[0].included.gpu = DIM_BY_KEY.gpu.values.slice();'
+    + 'plots[0].included.app = DIM_BY_KEY.app.values.slice();'
+    + 'plots[0].zones = {x:["threads"], series:[], facet:["gpu","app"]};'
+    + 'renderPlots();');
+  const parts = Array.from(d.querySelectorAll('#plots .plot-part'));
+  ok(parts.length === 2, 'two groups: flat along GPU, and flat along nothing', parts.length);
+  const flat = parts.find(p => /does not vary by GPU/.test(p.textContent));
+  ok(!!flat, 'the comparison group says which dimension it is flat along',
+     parts.map(p => (p.querySelector('.chart-note') || {}).textContent).join(' | '));
+  ok(!/App/.test((flat.querySelector('.chart-note') || {}).textContent),
+     'and does not claim to be flat along the other one',
+     (flat.querySelector('.chart-note') || {}).textContent);
+  ok(flat.querySelectorAll('.facet-card').length === 2,
+     'it still gets a chart per App — it does vary along that',
+     flat.querySelectorAll('.facet-card').length);
+  const other = parts.find(p => p !== flat);
+  ok(other.querySelectorAll('svg').length === 4, 'the duration keeps all four charts',
+     other.querySelectorAll('svg').length);
+
+  // and no two drawn charts hold identical numbers
+  const bodies = Array.from(d.querySelectorAll('#plots svg')).map(s =>
+    Array.from(s.querySelectorAll('rect.bar')).map(r => r.getAttribute('height')).join(',')
+    + '|' + Array.from(s.querySelectorAll('text.axis-label')).map(t => t.textContent).join(','));
+  ok(new Set(bodies).size === bodies.length,
+     'so no chart on the page is a copy of another', bodies.length + ' charts');
   w.close();
 }
 

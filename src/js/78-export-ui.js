@@ -114,8 +114,15 @@ function addTikzButton(host, getRoot, label, name, cls) {
       const many = pgf.files.length > 1;
       pgf.files.forEach(f => parts.push(Object.assign({ tab: many ? f.name : 'the .csv' }, f)));
     }
+    // The files as imported, for a paper that wants to ship its inputs. They
+    // are NOT what the pgfplots figure reads: what is plotted has been
+    // filtered, aggregated and had its derived measures computed, and often
+    // exists as no column in any of these.
+    const src = (DS && DS.sources) || [];
+    src.forEach(s => parts.push({ name: s.name, text: s.text, tab: 'imported: ' + s.name }));
     showTexPanel(parts, pgf
-      ? 'TikZ redraws the figure; pgfplots plots the .csv, so restyling never means regenerating the data'
+      ? 'TikZ redraws the figure; pgfplots plots the exported .csv'
+        + (src.length ? '; the imported files are here too, unchanged' : '')
       : null);
     setStatus('Export ready — ' + base + '.tex', false);
   });

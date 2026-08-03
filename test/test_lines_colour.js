@@ -542,6 +542,78 @@ console.log('\n=== 11. Both keys reach every export ===');
   w.close();
 }
 
+console.log('\n=== 11b. A dual-axis figure exports as two pgfplots axes ===');
+{
+  // One `axis` with `ybar` put every series on the left scale, so the measure
+  // the second axis exists for came out as a bar against a scale it does not
+  // belong to -- a count beside percentages is then a flat line at zero, and
+  // the series looked simply missing from the figure.
+  const { w, d } = boot();
+  add(d, 'Count A');
+  dualOn(w, d);
+  ok(d.querySelectorAll('#plots polyline.series-line').length > 0, 'the screen draws lines');
+
+  const dt = w.eval('(function(){ var s = document.querySelector("#plots .leaf-shell");'
+    + 'return JSON.stringify({dual: s.__vizData.dual, axis: s.__vizData.seriesAxis,'
+    + 'kinds: (s.__vizData.axisKinds||[]).map(function(k){return k && k.key;})}); })()');
+  const info = JSON.parse(dt);
+  ok(info.dual === true, 'the data table records that there are two axes');
+  ok(info.axis.indexOf(0) !== -1 && info.axis.indexOf(1) !== -1,
+     'and which series is on which', JSON.stringify(info.axis));
+  ok(info.kinds.join(',') === 'pct,count', 'with a format for each', info.kinds.join(','));
+
+  const pgf = w.eval('(function(){ var s = document.querySelector("#plots .leaf-shell");'
+    + 'return pgfplotsFor(s.__vizData, "d.csv", "", window, {}).join("\\n"); })()');
+  ok((pgf.match(/\\begin\{axis\}/g) || []).length === 2, 'two axis environments',
+     (pgf.match(/\\begin\{axis\}/g) || []).length);
+  ok(/axis y line\*=left/.test(pgf) && /axis y line\*=right/.test(pgf),
+     'one on each side');
+  ok(/axis x line=none/.test(pgf), 'the second draws no second x-axis over the first');
+  const xmins = pgf.match(/xmin=[-\d.]+, xmax=[\d.]+/g) || [];
+  ok(xmins.length === 2 && xmins[0] === xmins[1],
+     'and they share an x range, or the bars and lines would not line up', xmins.join(' / '));
+
+  const left = pgf.slice(pgf.indexOf('\\begin{axis}'), pgf.indexOf('\\end{axis}'));
+  const right = pgf.slice(pgf.lastIndexOf('\\begin{axis}'));
+  ok(/ybar/.test(left) && !/ybar/.test(right), 'bars on the left, not on the right');
+  ok(/dashed/.test(right) && /\\addplot/.test(right),
+     'the right-hand series really is plotted, as a dashed line', right.split('\n').filter(l => /addplot/.test(l))[0]);
+  ok(/ylabel=\{rate/.test(left) && /ylabel=\{counts/.test(right),
+     'each axis labelled with its own measure');
+  ok(/ymode=log/.test(right) && !/ymode=log/.test(left),
+     'and scaled by its own rules — the count is logarithmic, the rate is not');
+  ok((pgf.match(/\\addlegendimage/g) || []).length === 3,
+     'the right-hand series appear in the left axis\'s legend, so there is one key',
+     (pgf.match(/\\addlegendimage/g) || []).length);
+  ok(/\(right\)/.test(pgf), 'marked as belonging to the other axis');
+  w.close();
+}
+
+console.log('\n=== 11c. The imported files ship with the figure ===');
+{
+  const { w, d } = boot();
+  w.eval('setStore(makeMemoryStore());');
+  const CSV = 'app,l1\nA,62.1\nB,55.3\n';
+  const rec = { id: 'r', name: 'r', sources: [{ filename: 'measured.csv', text: CSV }], recipe: { columns: [
+    { source: 'app', name: 'app', label: 'App', role: 'dimension' },
+    { source: 'l1', name: 'l1', label: 'L1 hit rate', role: 'measure', format: 'pct' }] } };
+  w.eval('startWithDataset(datasetFromRecord(' + JSON.stringify(rec) + '))');
+  ok(w.eval('JSON.stringify(DS.sources.map(function(s){return s.name;}))') === '["measured.csv"]',
+     'the dataset keeps the file it was built from');
+
+  d.querySelector('#plots .export-group button').click();
+  const tabs = Array.from(d.querySelectorAll('#tex-modal .tex-tab'));
+  const imported = tabs.find(t => /^imported:/.test(t.textContent));
+  ok(!!imported, 'the export offers it', tabs.map(t => t.textContent).join(' | '));
+  imported.click();
+  ok(d.querySelector('#tex-modal .tex-source').value === CSV,
+     'unchanged, byte for byte — it is the input, not a re-export');
+  ok(/imported files are here too/.test(d.querySelector('#tex-modal .tex-note').textContent),
+     'and the note says the pgfplots figure still reads the exported .csv',
+     d.querySelector('#tex-modal .tex-note').textContent);
+  w.close();
+}
+
 console.log('\n=== 12. Layout presets say which dimensions they move ===');
 {
   const { w, d } = boot();

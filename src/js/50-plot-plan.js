@@ -601,26 +601,44 @@ function renderPlotChart(plot, container) {
   const plan = computeAxisPlan(plot);
   // A facet dimension only SOME of the measures vary along cannot be dropped --
   // the others need it -- but the ones that are constant along it were being
-  // drawn again, identically, inside every chart it produced. Draw those once,
-  // above the facets, and facet the rest. This is the same rule as dropping a
-  // consumed dimension, applied to the measures it is consumed for.
-  if (plan.facetDims.length && plot.included[MEASURE_DIM].length > 1) {
-    const flat = plot.included[MEASURE_DIM].filter(
-      mk => plan.facetDims.every(k => metricIgnoresDim(mk, k)));
-    const rest = plot.included[MEASURE_DIM].filter(mk => flat.indexOf(mk) === -1);
-    if (flat.length && rest.length) {
-      const names = ks => ks.map(k => DIM_BY_KEY[k].label).join(' and ');
-      html('div', 'chart-note', container).textContent =
-        flat.map(mk => METRIC_BY_KEY[mk].label).join(', ')
-        + (flat.length === 1 ? ' does' : ' do') + ' not vary by ' + names(plan.facetDims)
-        + ', so ' + (flat.length === 1 ? 'it is' : 'they are')
-        + ' drawn once instead of repeated in every chart below.';
-      // Each half is a proper subset, and neither can split again: one has
-      // nothing left that varies, the other nothing left that does not. They
-      // render into their own holders because renderPlotChart empties what it
-      // is handed.
-      renderPlotChart(metricSubset(plot, flat), html('div', 'plot-part', container));
-      renderPlotChart(metricSubset(plot, rest), html('div', 'plot-part', container));
+  // drawn again, identically, inside every chart it produced.
+  //
+  // So the measures are grouped by WHICH facet dimensions they are flat along,
+  // and each group is drawn as its own plot. Each group then has a uniform
+  // answer, so the plan-level drop above removes those dimensions from it and
+  // it is drawn once. Two groups was not enough: with Device and Application
+  // both faceting, a comparison over Device is flat along one of them and not
+  // the other, and "flat along all of them" put it back with the rest.
+  //
+  // Metric is excluded from the question. It is a facet like any other here,
+  // but no measure is "constant along which measure is shown", and asking left
+  // every group empty.
+  const facetable = plan.facetDims.filter(k => k !== MEASURE_DIM);
+  if (facetable.length && plot.included[MEASURE_DIM].length > 1) {
+    const groups = [];
+    const at = {};
+    plot.included[MEASURE_DIM].forEach(mk => {
+      const sig = facetable.filter(k => metricIgnoresDim(mk, k)).join(SIG_SEP);
+      if (at[sig] === undefined) { at[sig] = groups.length; groups.push({ sig: sig, keys: [] }); }
+      groups[at[sig]].keys.push(mk);
+    });
+    if (groups.length > 1) {
+      groups.forEach(g => {
+        const dropped = g.sig ? g.sig.split(SIG_SEP) : [];
+        const part = html('div', 'plot-part', container);
+        if (dropped.length) {
+          html('div', 'chart-note', part).textContent =
+            g.keys.map(mk => METRIC_BY_KEY[mk].label).join(', ')
+            + (g.keys.length === 1 ? ' does' : ' do') + ' not vary by '
+            + dropped.map(k => DIM_BY_KEY[k].label).join(' or ')
+            + ', so ' + (g.keys.length === 1 ? 'it is' : 'they are')
+            + ' drawn once rather than repeated in every chart of ' + (dropped.length === 1 ? 'it' : 'them') + '.';
+        }
+        // Each group has one answer for every facet dimension, so re-entering
+        // finds a single group and cannot split again. Its own holder, because
+        // renderPlotChart empties what it is handed -- including the note.
+        renderPlotChart(metricSubset(plot, g.keys), html('div', 'plot-part-body', part));
+      });
       return;
     }
   }

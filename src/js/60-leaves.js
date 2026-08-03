@@ -314,6 +314,18 @@ function renderDualAxisLeaf(container, spec, asLines) {
   drawSeriesLines(plotG, secondary, xVals, lay, scR, getValue, secondaryKind, true, spec.lineBreaks, spec.style, lineOpts);
   drawXAxis(plotG, xVals, xDims, lay, plotH, showX);
 
+  // Which series belongs on which axis, recorded for the exports. Without it
+  // pgfplots put every series on one `ybar` axis: the right-hand measure came
+  // out as a bar on the left-hand scale, which for a count beside a percentage
+  // is a flat line at zero -- so the series the second axis exists for was the
+  // one missing from the figure.
+  if (spec.dataTable) {
+    spec.dataTable.dual = true;
+    spec.dataTable.asLines = !!asLines;
+    spec.dataTable.axisKinds = [primaryKind, secondaryKind];
+    spec.dataTable.seriesAxis = sVals.map(sv => (secondary.indexOf(sv) !== -1 ? 1 : 0));
+  }
+
   scrollWrap(container, svg, w, h, spec);
   if (unplaced.length) {
     html('div', 'chart-note', container).textContent =

@@ -133,6 +133,12 @@ would draw one number several times — and that holds in **every** zone, Facets
 included, where one chart per value would be the same chart over again. The chip
 stays where you put it; the chart says once, at the top, that it is not using it.
 
+Where the measures on one plot disagree, they are grouped by *which* facet
+dimensions each is constant along, and each group is drawn as its own plot with
+those dimensions dropped. A comparison over Device shown beside a raw duration,
+with Device and Application both faceting, gives one chart of the comparison per
+Application and the full Device × Application grid for the duration.
+
 A dimension is only dropped when *every* measure on the chart is constant along
 it: a comparison and a raw measure side by side still need it, because the raw
 one varies. Where they disagree about a **facet** dimension the plot splits
@@ -171,6 +177,19 @@ needs nothing but `tikz`; *pgfplots (reads the .csv)* is the same figure as an
 `axis` environment; and *the .csv* is the plotted data, so restyling the figure
 never means regenerating it. Note this is the data **as plotted** — filtered,
 aggregated and with derived measures computed — not the file that was imported.
+
+The files that *were* imported are offered alongside, unchanged, so a paper can
+ship its inputs next to its figures. They are extra tabs, not something the
+pgfplots figure reads: what is plotted often exists as no column in any of them.
+A folder of more than eight files, or more than 4 MB, is not attached — holding
+a second copy of every byte is the one thing here that can make the page fall
+over.
+
+A **dual-axis** figure exports as two `axis` environments in one picture, the
+second drawing only its right-hand axis and sharing the first one's x range —
+bars on the left, dashed lines with marks on the right, each axis with its own
+label and its own linear/log choice, and one legend carrying both (the
+right-hand series appear there via `\addlegendimage`).
 
 ## Styling a figure
 
