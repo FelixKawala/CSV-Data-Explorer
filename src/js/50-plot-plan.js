@@ -583,6 +583,15 @@ function axesFromPlan(plan) {
   };
 }
 
+// The same plot showing a different set of measures. Everything else -- zones,
+// included values, style, the drawn-series list the style panel reads -- is
+// shared, so the two halves of a split plot stay one plot.
+function metricSubset(plot, keys) {
+  return Object.assign({}, plot, {
+    included: Object.assign({}, plot.included, { metric: keys.slice() }),
+  });
+}
+
 function renderPlotChart(plot, container) {
   container.innerHTML = '';
   if (plot.included.metric.length === 0) {
@@ -590,6 +599,31 @@ function renderPlotChart(plot, container) {
     return;
   }
   const plan = computeAxisPlan(plot);
+  // A facet dimension only SOME of the measures vary along cannot be dropped --
+  // the others need it -- but the ones that are constant along it were being
+  // drawn again, identically, inside every chart it produced. Draw those once,
+  // above the facets, and facet the rest. This is the same rule as dropping a
+  // consumed dimension, applied to the measures it is consumed for.
+  if (plan.facetDims.length && plot.included[MEASURE_DIM].length > 1) {
+    const flat = plot.included[MEASURE_DIM].filter(
+      mk => plan.facetDims.every(k => metricIgnoresDim(mk, k)));
+    const rest = plot.included[MEASURE_DIM].filter(mk => flat.indexOf(mk) === -1);
+    if (flat.length && rest.length) {
+      const names = ks => ks.map(k => DIM_BY_KEY[k].label).join(' and ');
+      html('div', 'chart-note', container).textContent =
+        flat.map(mk => METRIC_BY_KEY[mk].label).join(', ')
+        + (flat.length === 1 ? ' does' : ' do') + ' not vary by ' + names(plan.facetDims)
+        + ', so ' + (flat.length === 1 ? 'it is' : 'they are')
+        + ' drawn once instead of repeated in every chart below.';
+      // Each half is a proper subset, and neither can split again: one has
+      // nothing left that varies, the other nothing left that does not. They
+      // render into their own holders because renderPlotChart empties what it
+      // is handed.
+      renderPlotChart(metricSubset(plot, flat), html('div', 'plot-part', container));
+      renderPlotChart(metricSubset(plot, rest), html('div', 'plot-part', container));
+      return;
+    }
+  }
   // Said once, above everything, because the drop is a decision about the whole
   // plot: the chips are still where the user put them and the chart is quietly
   // not using them.

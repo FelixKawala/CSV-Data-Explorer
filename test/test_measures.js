@@ -302,6 +302,58 @@ console.log('\n=== 6e. A consumed dimension is dropped from EVERY zone, facets t
   w.close();
 }
 
+console.log('\n=== 6g. A measure flat along the facets is drawn once, not per facet ===');
+{
+  // A facet dimension only SOME measures vary along cannot be dropped -- the
+  // others need it -- but the ones that are constant along it were drawn again,
+  // identically, inside every chart it produced.
+  const { w, d } = boot();
+  w.eval('setStore(makeMemoryStore());');
+  const rows = [];
+  ['A', 'B'].forEach(app => ['2080', '4070'].forEach(gpu => ['512', '256'].forEach(t => {
+    rows.push([app, gpu, t, (60 + (gpu === '4070' ? 8 : 0) + Number(t) / 100).toFixed(2),
+      (0.4 + Number(t) / 10000 + (gpu === '4070' ? -0.05 : 0)).toFixed(3)].join(','));
+  })));
+  const rec = { id: 'r', name: 'r',
+    sources: [{ filename: 'r.csv', text: 'app,gpu,threads,l1,exectime\n' + rows.join('\n') + '\n' }],
+    recipe: { columns: [
+      { source: 'app', name: 'app', label: 'App', role: 'dimension' },
+      { source: 'gpu', name: 'gpu', label: 'GPU', role: 'dimension' },
+      { source: 'threads', name: 'threads', label: 'Threads', role: 'dimension' },
+      { source: 'l1', name: 'l1', label: 'L1 hit rate', role: 'measure', format: 'pct' },
+      { source: 'exectime', name: 'exectime', label: 'Exec time', role: 'measure', format: 'duration' }] } };
+  w.eval('startWithDataset(datasetFromRecord(' + JSON.stringify(rec) + '))');
+  w.eval('addDerivedMeasure({op:"share",base:"l1",over:"gpu",a:"2080",b:"4070"})');
+  const key = w.eval('customMeasures()[0].key');
+
+  w.eval('plots[0].included.metric = ["exectime","' + key + '"];'
+    + 'plots[0].included.gpu = DIM_BY_KEY.gpu.values.slice();'
+    + 'plots[0].zones = {x:["threads"], series:["app"], facet:["gpu"]};'
+    + 'renderPlots();');
+  ok(w.eval('JSON.stringify(computeAxisPlan(plots[0]).ignoredDims)') === '[]',
+     'GPU cannot be dropped outright — the duration really does vary along it',
+     w.eval('JSON.stringify(computeAxisPlan(plots[0]).ignoredDims)'));
+  ok(d.querySelectorAll('#plots .plot-part').length === 2,
+     'so the plot is split: what varies along GPU, and what does not',
+     d.querySelectorAll('#plots .plot-part').length);
+  const note = Array.from(d.querySelectorAll('#plots .chart-note')).map(n => n.textContent);
+  ok(note.some(t => /does not vary by GPU/.test(t) && /drawn once/.test(t)),
+     'with the reason stated', note.join(' | '));
+
+  const parts = d.querySelectorAll('#plots .plot-part');
+  ok(parts[0].querySelectorAll('.facet-card').length === 0,
+     'the comparison is not faceted at all');
+  ok(parts[0].querySelectorAll('svg').length === 1, 'one chart for it',
+     parts[0].querySelectorAll('svg').length);
+  ok(parts[1].querySelectorAll('.facet-card').length === 2,
+     'while the duration still gets a chart per GPU',
+     parts[1].querySelectorAll('.facet-card').length);
+  ok(d.querySelectorAll('#plots rect.bar').length === 6,
+     '2 comparison bars once, plus 2 durations in each of 2 facets — not 8',
+     d.querySelectorAll('#plots rect.bar').length);
+  w.close();
+}
+
 console.log('\n=== 6f. A formula only ignores what ALL its operands ignore ===');
 {
   const { w } = boot();

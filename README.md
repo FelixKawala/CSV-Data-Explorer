@@ -135,7 +135,9 @@ stays where you put it; the chart says once, at the top, that it is not using it
 
 A dimension is only dropped when *every* measure on the chart is constant along
 it: a comparison and a raw measure side by side still need it, because the raw
-one varies. A calculated measure inherits the property only if all of its
+one varies. Where they disagree about a **facet** dimension the plot splits
+instead — the measures that are constant along it are drawn once, above the
+facets, and the ones that vary get their chart per value as usual. A calculated measure inherits the property only if all of its
 operands have it — `Δ rate × count` still varies along the compared dimension,
 through the count.
 
@@ -236,9 +238,10 @@ second scale is a second row of ticks above the chart rather than a second side,
 and its bars are outlined instead of solid. Both rows meet at zero, which is the
 one thing the two scales agree on.
 
-A chart that draws lines offers the line and marker settings whether or not it
-is a line chart — a bar chart with a second axis draws its right-hand series as
-lines. **Lines** in the plot head chooses what a line joins: *follow the axis*
+A chart that draws lines offers every line setting whether or not it is a line
+chart — a bar chart with a second axis draws its right-hand series as lines, and
+their width, markers, breaks and the dimension they run along all belong to it.
+**Lines** in the plot head chooses what a line joins: *follow the axis*
 keeps the drawn order and stops at a gap, and naming a dimension instead makes
 the line a statement about that dimension — one line per combination of the
 others, stepping over the x positions where there is no value rather than ending

@@ -277,6 +277,30 @@ console.log('\n=== 4. Line settings are reachable from a chart that draws lines 
   const perSeries = d.querySelector('#plots .style-series');
   ok(!!perSeries.querySelector('.style-series-shape') && !!perSeries.querySelector('.style-series-pattern'),
      'per series, both — the chart has both kinds of mark on it');
+
+  w.close();
+}
+
+console.log('\n=== 4b. Where the lines CONNECT is a line setting too ===');
+{
+  // It was gated on the chart type rather than on whether the chart draws
+  // lines, so reaching it meant switching to a line chart, changing it, and
+  // switching back.
+  const { w, d } = boot();
+  add(d, 'Count A');                       // a rate and a count: two scales
+  ok(d.querySelectorAll('#plots .plot-head select')[0].value === 'bars', 'a bar chart');
+  ok(!d.querySelector('#plots .line-along'), 'with no lines on it, and no line settings');
+
+  dualOn(w, d);                            // the right-hand series become lines
+  ok(!!d.querySelector('#plots .line-along'), 'the line-along choice appears with them');
+  const brk = Array.from(d.querySelectorAll('#plots .head-toggle'))
+    .find(l => /break lines per group/.test(l.textContent));
+  ok(!!brk, 'and so does breaking them per group');
+  const i = brk.querySelector('input');
+  i.checked = false;
+  fire(w, i);
+  ok(w.eval('plots[0].breakLines') === false, 'it takes effect without changing chart type');
+  ok(w.eval('plots[0].chartType') === 'bars', 'which is still bars');
   w.close();
 }
 

@@ -62,7 +62,11 @@ function renderPlotCard(plot) {
   }
   // Breaking per group is what "follow the axis" does at a block boundary; once
   // a dimension is named it is that dimension, not the blocks, that decides.
-  if (plot.chartType === 'lines' && headPlan.xDims.length > 1 && !plot.lineAlong) {
+  // Gated on whether the chart DRAWS lines, not on whether it is a line chart:
+  // a bar chart with a second axis draws its right-hand series as lines, and
+  // where those lines connect was reachable only by switching chart type,
+  // changing it, and switching back.
+  if (drawsLinesHead && headPlan.xDims.length > 1 && !plot.lineAlong) {
     const lab3 = html('label', 'head-toggle', head);
     const cb3 = document.createElement('input');
     cb3.type = 'checkbox'; cb3.checked = plot.breakLines !== false;
