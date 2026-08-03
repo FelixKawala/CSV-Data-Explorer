@@ -102,18 +102,77 @@ const OTHER = 'thing,score\nx,1.5\ny,2.5\n';
     w.close();
   }
 
-  console.log('\n=== 4. Differently-shaped files cannot be unioned ===');
+  console.log('\n=== 4. Differently-shaped files are not unioned unless asked ===');
   {
     const { w, d } = boot();
     pick(w, [{ name: 'runA.csv', text: A }, { name: 'other.csv', text: OTHER }]);
     await wait(60);
-    ok(!radio(d, 'one dataset'), 'unioning is not offered');
-    ok(/different columns/.test(d.querySelector('.import-target').textContent), 'and the reason is given',
-       d.querySelector('.import-target').textContent.slice(-70));
+    ok(radio(d, 'separate datasets').querySelector('input').checked,
+       'separate datasets is the default when the columns differ');
+    ok(!!radio(d, 'one dataset anyway'), 'combining is offered, worded as the exception');
+    ok(!radio(d, 'one dataset anyway').querySelector('input').checked, 'and not chosen for you');
+    const why = d.querySelector('.import-target').textContent;
+    ok(/do not have the same columns/.test(why), 'the reason is given', why.slice(0, 60));
+    ok(/not in every file: case, size, rate, thing, score/.test(why), 'naming the columns at issue');
+    ok(!d.getElementById('fill-value'), 'and no fill value is asked for until it is wanted');
     importBtn(d).click();
     await wait(60);
     const list = await w.eval('STORE.list()');
     ok(list.length === 2, 'they import as two datasets', list.map(r => r.name).join(', '));
+    w.close();
+  }
+
+  console.log('\n=== 4b. Combining them anyway fills the gaps ===');
+  {
+    const { w, d } = boot();
+    pick(w, [{ name: 'runA.csv', text: A }, { name: 'other.csv', text: OTHER }]);
+    await wait(60);
+    radio(d, 'one dataset anyway').querySelector('input').click();
+    await wait(60);
+    const fill = d.getElementById('fill-value');
+    ok(!!fill, 'a fill value is asked for');
+    ok(fill.value === 'n/a', 'defaulting to something that reads as absent', fill.value);
+    importBtn(d).click();
+    await wait(80);
+    const list = await w.eval('STORE.list()');
+    ok(list.length === 1, 'one dataset, not two', list.length);
+    ok(list[0].recipe.fill === 'n/a', 'the fill is part of the recipe', list[0].recipe.fill);
+
+    const got = w.eval(`(function () {
+      return { dims: DS.dims.map(d => d.key).join(','),
+               measures: DS.measures.map(m => m.key).join(','),
+               rows: DS.nRows,
+               caseVals: DS.dims.filter(d => d.key === 'case')[0].values.join(','),
+               // a row from the file that has no "rate" at all
+               noRate: metricValueAt({ __source: 'other', case: 'n/a', size: 'n/a', thing: 'x', metric: 'rate' }),
+               score: metricValueAt({ __source: 'other', case: 'n/a', size: 'n/a', thing: 'x', metric: 'score' }),
+               kept: metricValueAt({ __source: 'runA', case: 'alpha', size: '512', thing: 'n/a', metric: 'rate' }) };
+    })()`);
+    ok(got.dims === '__source,case,size,thing', 'every dimension from both files is there', got.dims);
+    ok(got.measures === 'rate,score', 'and every measure', got.measures);
+    ok(got.rows === 6, 'all six rows survived', got.rows);
+    ok(/n\/a/.test(got.caseVals), 'the gap is a value of its dimension, not a dropped row', got.caseVals);
+    ok(got.kept === 10, 'a row from the first file keeps its number', got.kept);
+    ok(got.score === 1.5, 'and one from the second keeps its own', got.score);
+    ok(got.noRate === null, '"n/a" is not a number, so the measure stays empty', got.noRate);
+    w.close();
+  }
+
+  console.log('\n=== 4c. A numeric fill fills the measures too ===');
+  {
+    const { w, d } = boot();
+    pick(w, [{ name: 'runA.csv', text: A }, { name: 'other.csv', text: OTHER }]);
+    await wait(60);
+    radio(d, 'one dataset anyway').querySelector('input').click();
+    await wait(60);
+    const fill = d.getElementById('fill-value');
+    fill.value = '0';
+    fill.dispatchEvent(new w.Event('input'));
+    await wait(200);
+    importBtn(d).click();
+    await wait(80);
+    const v = w.eval("metricValueAt({ __source: 'other', case: '0', size: '0', thing: 'x', metric: 'rate' })");
+    ok(v === 0, 'the measure a file has not got reads as zero when zero was asked for', v);
     w.close();
   }
 

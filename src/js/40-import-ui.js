@@ -85,6 +85,10 @@ function stageFiles(files, note) {
         fallback: { name: 'Value', format: 'number' } },
       path: { levelCfg: {}, stem: { on: false, kind: 'template', text: '', fieldCfg: {} } },
       union: false,
+      // combining files that do not agree on their columns is a decision, not a
+      // default -- and then the gaps need a value
+      forceUnion: false,
+      fill: 'n/a',
       addSourceDim: false,
       name: usable.length === 1 ? stemOf(usable[0].filename) : usable.length + ' files',
       ragged: usable.reduce((n, s) => n + s.parsed.ragged.length, 0),
@@ -262,13 +266,21 @@ function restagePending() {
     return ids.sort().join(SIG_SEP) + SIG_GROUP + Object.keys(ms).sort().join(SIG_SEP);
   };
   pend.sameShape = files.every(f => sig(f) === sig(files[0]));
-  if (!pend.sameShape) pend.union = false;
+  // Refusing outright was too strong: two runs of the same experiment where one
+  // recorded a column the other did not are still one dataset, and pasting them
+  // together by hand is the alternative. So it stays off by default and asks.
+  if (!pend.sameShape && !pend.forceUnion) pend.union = false;
+  pend.partialCols = pend.columns.filter(
+    c => c.role !== 'ignore' && c.profile.files !== undefined && c.profile.files < files.length);
 
   pend.rowCount = files.reduce((n, f) => n + f.parsed.rows.length, 0);
   pend.emitted = files.reduce((n, f, i) => n + f.parsed.rows.length * pend.meltGroupsPerFile[i], 0);
 
+  // a filled gap is a value of that dimension like any other, so it counts
+  const filling = pend.union && !pend.sameShape;
   const dimCounts = pend.columns.filter(c => c.role === 'dimension')
-    .map(c => Math.max(c.profile.distinct, 1))
+    .map(c => Math.max(c.profile.distinct, 1)
+      + (filling && pend.partialCols.indexOf(c) !== -1 ? 1 : 0))
     .concat(pend.pathDims.map(d => Math.max(d.values.length, 1)))
     .concat(pend.meltDims.filter(d => d.cfg.include).map(d => Math.max(d.values.length, 1)));
   if (pend.addSourceDim && files.length > 1) dimCounts.push(files.length);
@@ -310,6 +322,9 @@ function recipeFromPending(pend, files) {
     sourceLabel: 'Source',
     parse: {},
   };
+  // only when it can do something: a tidy import must still write the recipe it
+  // always wrote, so that reading one back proves nothing changed
+  if (pend.union && !pend.sameShape) recipe.fill = pend.fill;
 
   const live = pend.meltPat && pend.meltPat.ok ? pend.meltPat : null;
   if (live) {
@@ -846,6 +861,7 @@ function renderImportReview(host) {
       r.checked = (val === 'union') === pend.union;
       r.addEventListener('change', () => {
         pend.union = (val === 'union');
+        pend.forceUnion = pend.union && !pend.sameShape;
         pend.addSourceDim = pend.union && !pend.pathDims.length;
         refreshReshape();
       });
@@ -857,9 +873,23 @@ function renderImportReview(host) {
     if (pend.sameShape) {
       mk('union', 'one dataset', 'rows appended, kept apart by where they came from');
     } else {
-      html('div', 'import-note', opts).textContent = pend.melt.on
-        ? 'The files do not produce the same columns even after the split, so they cannot be combined.'
-        : 'The files have different columns, so they cannot be combined into one dataset.';
+      mk('union', 'one dataset anyway', 'the columns do not match; the gaps get filled in');
+      html('div', 'import-note', opts).textContent = (pend.melt.on
+        ? 'The files do not produce the same columns even after the split. '
+        : 'The files do not have the same columns. ')
+        + (pend.partialCols.length
+          ? pend.partialCols.length + ' of them are not in every file: '
+            + pend.partialCols.slice(0, 6).map(c => c.name).join(', ')
+            + (pend.partialCols.length > 6 ? '…' : '') + '.'
+          : '');
+    }
+    if (pend.union && !pend.sameShape) {
+      const lab = html('label', 'radio-row', opts);
+      html('span', 'derive-label', lab).textContent = 'Fill what a file has not got with';
+      textField(lab, 'fill-value', pend.fill, v => { pend.fill = v; refreshReshapeSoon(); });
+      html('span', 'radio-hint', lab).textContent =
+        'a dimension is labelled with it; a measure takes it only if it is a number, '
+        + 'so "n/a" leaves a gap and "0" fills it';
     }
     if (pend.union) {
       const lab = html('label', 'radio-row', opts);

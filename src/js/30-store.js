@@ -93,6 +93,7 @@ function setActiveDatasetId(id) {
 //   { name,
 //     columns:   [{source, name, label, role, format, agg, labelOverride}],
 //     sourceDim: null | string,
+//     fill:      null | string,                                   // absent columns
 //     melt:      null | { pattern, fields, measure, measures },   // column names
 //     path:      null | { levels, pattern },                      // file paths
 //     custom:    [ ... ] }                                        // page-defined measures
@@ -179,6 +180,19 @@ function meltMeasureFor(melt, matched, byValue, appended, taken) {
   return { spec, fallback: false };
 }
 
+// What a file that has not got a column contributes to it. Files with different
+// columns can be unioned deliberately, and then the gap needs a value: a
+// dimension takes the text (it has to take something, or the row falls outside
+// the declared domain and is dropped whole), a measure takes it only if it is a
+// number, because "no data" and "zero" are different claims about a measurement.
+// One string serves both roles, because the row loop already asks whether a
+// cell is a number: "n/a" leaves a measure empty and labels a dimension, "0"
+// fills both in. That is why it is offered as a value rather than as a choice
+// between blank and zero.
+function fillCell(recipe) {
+  return recipe.fill === undefined || recipe.fill === null ? '' : String(recipe.fill);
+}
+
 function datasetFromRecord(rec) {
   const recipe = rec.recipe;
   const cols = recipe.columns || [];
@@ -227,6 +241,13 @@ function datasetFromRecord(rec) {
     Object.keys(constants).forEach(k => seen(k, constants[k]));
 
     const idIdx = cols.map(c => (c.role === 'ignore' ? -1 : header.indexOf(c.source)));
+    // A column this file has not got still has to be a value of its dimension,
+    // or every row of the file falls outside the declared domain and is dropped
+    // whole -- silently, since makeDataset simply skips a tuple it cannot code.
+    const gap = fillCell(recipe);
+    cols.forEach((c, ci) => {
+      if (c.role === 'dimension' && idIdx[ci] === -1) seen(c.name, gap.trim());
+    });
 
     // Columns that share a dimension tuple become ONE emitted row carrying
     // several measures. Emitting one row per column instead would make the
@@ -264,7 +285,7 @@ function datasetFromRecord(rec) {
       for (let ci = 0; ci < cols.length; ci++) {
         const c = cols[ci];
         if (c.role === 'ignore') continue;
-        const cell = idIdx[ci] === -1 ? '' : cells[idIdx[ci]];
+        const cell = idIdx[ci] === -1 ? gap : cells[idIdx[ci]];
         if (c.role === 'dimension') {
           const v = String(cell).trim();
           base[c.name] = v;

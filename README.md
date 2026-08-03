@@ -44,6 +44,14 @@ Several files at once become either one dataset per file, or — when the header
 match — a single dataset with a `Source` dimension naming each file. **Import
 folder…** takes a whole tree.
 
+Files whose columns *don't* match can be combined too, as **one dataset anyway**:
+it is not the default, and it asks what a file that has not got a column should
+contribute. One value covers both roles, because the row loop already asks
+whether a cell is a number — `n/a` labels the dimension and leaves the measure
+empty, `0` fills both in. The filled value is a value of its dimension like any
+other, which is the point: without one, every row of the file that lacks the
+column falls outside the declared domain and is dropped whole.
+
 ### When the CSV is not tidy
 
 Dimensions often live outside the rows: in the column names, or in the folders
