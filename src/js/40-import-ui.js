@@ -538,6 +538,36 @@ function renderDatasetList(host) {
       card.setAttribute('data-id', rec.id);
       const title = html('div', 'dataset-name', card);
       title.textContent = rec.name;
+      // Renaming swaps the caption for a field in place rather than opening
+      // anything: the name is one word and a dialog for it would be theatre.
+      const startRename = () => {
+        if (card.querySelector('.dataset-rename')) return;
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.className = 'name-input dataset-rename';
+        inp.id = 'dataset-rename-' + rec.id;
+        inp.value = rec.name;
+        let done = false;
+        const finish = save => {
+          if (done) return;
+          done = true;
+          const next = inp.value.trim();
+          if (!save || !next || next === rec.name) { renderDataPanel(); return; }
+          renameDataset(rec.id, next).then(okDone => {
+            setDataStatus(okDone ? 'Renamed to "' + next + '".' : 'Could not rename that dataset.');
+            renderDataPanel();
+          });
+        };
+        inp.addEventListener('keydown', e => {
+          if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+          if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        });
+        inp.addEventListener('blur', () => finish(true));
+        card.replaceChild(inp, title);
+        try { inp.focus(); inp.select(); } catch (e) {}
+      };
+      title.title = 'Click to rename';
+      title.addEventListener('click', startRename);
       const meta = html('div', 'dataset-meta', card);
       const shape = recipeShape(rec.recipe);
       meta.textContent = shape.dims + ' dimension' + (shape.dims === 1 ? '' : 's') + ' · '
@@ -548,6 +578,10 @@ function renderDatasetList(host) {
       open.type = 'button'; open.className = 'btn small'; open.textContent = 'Open';
       open.addEventListener('click', () => activateDataset(rec.id));
       acts.appendChild(open);
+      const ren = document.createElement('button');
+      ren.type = 'button'; ren.className = 'btn small'; ren.textContent = 'Rename';
+      ren.addEventListener('click', startRename);
+      acts.appendChild(ren);
       const del = document.createElement('button');
       del.type = 'button'; del.className = 'btn small danger'; del.textContent = 'Delete';
       del.addEventListener('click', () => deleteDataset(rec.id));

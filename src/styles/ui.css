@@ -232,7 +232,9 @@
   border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--surface-1);
 }
 .dataset-card.active { border-color: var(--series-base); }
-.dataset-name { font-weight: 600; font-size: 13px; }
+.dataset-name { font-weight: 600; font-size: 13px; cursor: text; }
+.dataset-name:hover { text-decoration: underline dotted var(--text-muted); }
+.dataset-rename { font-weight: 600; font-size: 13px; }
 .dataset-meta { font-size: 11.5px; color: var(--text-muted); margin-right: auto; }
 .dataset-actions { display: flex; gap: 6px; }
 .import-review { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface-1); margin-bottom: 14px; }

@@ -482,6 +482,26 @@ function persistCustomMeasures() {
     .catch(() => false);
 }
 
+// The name a dataset was imported under is the file's stem, or "3 files" -- it
+// says where the bytes came from and nothing about what they are. It is a label
+// on a stored record, so it can simply be changed; the live dataset follows when
+// it is the open one, since nothing else holds a copy of it.
+function renameDataset(id, name) {
+  const clean = String(name || '').trim();
+  if (!clean) return Promise.resolve(false);
+  return Promise.resolve()
+    .then(() => STORE.get(id))
+    .then(rec => {
+      if (!rec) return false;
+      rec.name = clean;
+      return Promise.resolve(STORE.put(rec)).then(() => {
+        if (DS && activeDatasetId() === id) DS.name = clean;
+        return true;
+      });
+    })
+    .catch(() => false);
+}
+
 function newDatasetId() {
   return 'ds-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
 }
