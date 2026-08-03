@@ -608,7 +608,7 @@ console.log('\n=== 11c. The imported files ship with the figure ===');
   imported.click();
   ok(d.querySelector('#tex-modal .tex-source').value === CSV,
      'unchanged, byte for byte — it is the input, not a re-export');
-  ok(/imported files are here too/.test(d.querySelector('#tex-modal .tex-note').textContent),
+  ok(/imported files are on the row below/.test(d.querySelector('#tex-modal .tex-note').textContent),
      'and the note says the pgfplots figure still reads the exported .csv',
      d.querySelector('#tex-modal .tex-note').textContent);
   w.close();

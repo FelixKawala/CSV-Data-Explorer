@@ -34,7 +34,7 @@ async function grab(w, fn) {
   const modal = d.getElementById('tex-modal');
   if (!modal) return null;
   const out = {
-    name: modal.querySelector('.tex-name').textContent,
+    name: modal.querySelector('.tex-name').value,
     text: modal.querySelector('textarea.tex-source').value,
   };
   modal.remove();

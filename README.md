@@ -178,8 +178,14 @@ needs nothing but `tikz`; *pgfplots (reads the .csv)* is the same figure as an
 never means regenerating it. Note this is the data **as plotted** — filtered,
 aggregated and with derived measures computed — not the file that was imported.
 
-The files that *were* imported are offered alongside, unchanged, so a paper can
-ship its inputs next to its figures. They are extra tabs, not something the
+The **filename is editable** in the dialog, and renaming the `.csv` rewrites
+every reference to it in the figure that reads it — both the
+`\pgfplotstableread` and every `\addplot table {…}` — so `plot-1.csv` can become
+`l1-hit-rate.csv` without the document compiling to a missing-file error.
+Renaming a `.tex` changes only what it downloads as.
+
+The files that *were* imported are offered on a **second tab row**, unchanged, so
+a paper can ship its inputs next to its figures. They are not something the
 pgfplots figure reads: what is plotted often exists as no column in any of them.
 A folder of more than eight files, or more than 4 MB, is not attached — holding
 a second copy of every byte is the one thing here that can make the page fall

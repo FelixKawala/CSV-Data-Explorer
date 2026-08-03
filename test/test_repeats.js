@@ -41,7 +41,7 @@ console.log('\n=== 1. Export shows the source, not just a silent download ===');
   const area = modal.querySelector('textarea.tex-source');
   ok(!!area && area.readOnly, 'the source is shown in a read-only box');
   ok(/\\begin\{tikzpicture\}/.test(area.value), 'and it is the TikZ source', area.value.split('\n')[0]);
-  ok(/\.tex$/.test(modal.querySelector('.tex-name').textContent), 'the filename is shown', modal.querySelector('.tex-name').textContent);
+  ok(/\.tex$/.test(modal.querySelector('.tex-name').value), 'the filename is shown', modal.querySelector('.tex-name').value);
   const btns = Array.from(modal.querySelectorAll('.tex-head button')).map(b => b.textContent);
   ok(btns.indexOf('Download') !== -1 && btns.indexOf('Select all') !== -1 && btns.indexOf('Close') !== -1,
      'download, select-all and close are offered', btns.join(' | '));

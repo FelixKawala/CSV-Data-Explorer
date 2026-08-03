@@ -16,8 +16,29 @@ function downloadText(filename, text) {
   }
 }
 
-// parts: [{name, text, kind}] - the panel is the reliable delivery path, the
-// download button is the convenience on top of it.
+// The .csv a figure reads is named in the .tex that reads it, so renaming one
+// without the other produces a document that compiles to a missing-file error.
+// Every reference is rewritten with the name, which is the only thing that makes
+// the field safe to offer at all.
+function renameExportPart(parts, i, next) {
+  const from = parts[i].name;
+  const to = String(next || '').trim();
+  if (!to || to === from) return false;
+  parts[i].name = to;
+  if (!/\.csv$/i.test(from)) return true;      // a .tex is referenced by nothing
+  const re = new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+  parts.forEach((p, j) => {
+    if (j === i || p.kind === 'csv' || p.kind === 'source') return;
+    p.text = p.text.replace(re, to);
+  });
+  return true;
+}
+
+// parts: [{name, text, kind, tab, row}] - the panel is the reliable delivery
+// path, the download button is the convenience on top of it. `row: 2` puts a
+// part on a second tab row: the imported files are a different kind of thing
+// from the figure and its data, and eight of them crowded out the three that
+// most visits are here for.
 function showTexPanel(parts, note) {
   const old = document.getElementById('tex-modal');
   if (old) old.remove();
@@ -25,37 +46,61 @@ function showTexPanel(parts, note) {
   back.id = 'tex-modal';
   const card = html('div', 'tex-card', back);
   const head = html('div', 'tex-head', card);
-  const nameEl = html('span', 'tex-name', head);
+  const nameEl = document.createElement('input');
+  nameEl.type = 'text';
+  nameEl.className = 'tex-name';
+  nameEl.id = 'tex-filename';
+  nameEl.spellcheck = false;
+  nameEl.title = 'The filename this downloads as. Renaming a .csv renames it in the'
+    + ' figure that reads it.';
+  head.appendChild(nameEl);
 
   let active = 0;
   const tabs = html('div', 'tex-tabs', card);
+  const extra = html('div', 'tex-tabs tex-tabs-extra', card);
+  const buttons = [];
   const area = document.createElement('textarea');
   area.className = 'tex-source';
   area.readOnly = true;
   const noteEl = html('div', 'tex-note', null);
 
+  function label(i) {
+    return parts[i].tab || parts[i].name;
+  }
   function show(i) {
     active = i;
-    nameEl.textContent = parts[i].name;
+    nameEl.value = parts[i].name;
     area.value = parts[i].text;
-    Array.prototype.forEach.call(tabs.children, (b, j) => b.setAttribute('aria-pressed', j === i ? 'true' : 'false'));
+    buttons.forEach((b, j) => b.setAttribute('aria-pressed', j === i ? 'true' : 'false'));
     noteEl.textContent = parts[i].text.split('\n').length + ' lines'
       + (note ? ' — ' + note : '') + ' — select all and copy, or use Download.';
     try { area.focus(); area.select(); } catch (e) {}
   }
+
+  nameEl.addEventListener('change', () => {
+    const was = parts[active].name;
+    if (!renameExportPart(parts, active, nameEl.value)) { nameEl.value = was; return; }
+    buttons.forEach((b, j) => { b.title = parts[j].name; b.textContent = label(j); });
+    area.value = parts[active].text;
+    noteEl.textContent = /\.csv$/i.test(parts[active].name)
+      ? 'Renamed to ' + parts[active].name + ' — the figures that read it now say so too.'
+      : 'It will download as ' + parts[active].name + '.';
+  });
 
   parts.forEach((p, i) => {
     const b = document.createElement('button');
     // The tab says what the thing IS; the filename is what it downloads as.
     // "plot-1.tex" next to "plot-1-pgfplots.tex" made the reader work out the
     // difference from a suffix.
-    b.type = 'button'; b.className = 'tex-tab'; b.textContent = p.tab || p.name;
+    b.type = 'button'; b.className = 'tex-tab'; b.textContent = label(i);
     b.title = p.name;
     b.setAttribute('aria-pressed', 'false');
     b.addEventListener('click', () => show(i));
-    tabs.appendChild(b);
+    (p.row === 2 ? extra : tabs).appendChild(b);
+    buttons.push(b);
   });
   if (parts.length < 2) tabs.style.display = 'none';
+  if (!extra.children.length) extra.style.display = 'none';
 
   const dlBtn = document.createElement('button');
   dlBtn.type = 'button'; dlBtn.className = 'btn small primary'; dlBtn.textContent = 'Download';
@@ -105,10 +150,10 @@ function addTikzButton(host, getRoot, label, name, cls) {
     const tex = buildTikzDocument(root, window, name);
     if (!tex) { setStatus('Nothing to export here yet.', false); return; }
     const base = slugify(name);
-    const parts = [{ name: base + '.tex', text: tex, tab: 'TikZ (drawn)' }];
+    const parts = [{ name: base + '.tex', text: tex, tab: 'TikZ (drawn)', kind: 'tex' }];
     const pgf = buildPgfplotsDocument(root, name, base, window);
     if (pgf) {
-      if (pgf.tex) parts.push({ name: base + '-pgfplots.tex', text: pgf.tex, tab: 'pgfplots (reads the .csv)' });
+      if (pgf.tex) parts.push({ name: base + '-pgfplots.tex', text: pgf.tex, tab: 'pgfplots (reads the .csv)', kind: 'tex' });
       // one .csv per chart when a plot holds several, and then the filename is
       // the only thing that tells them apart
       const many = pgf.files.length > 1;
@@ -119,10 +164,12 @@ function addTikzButton(host, getRoot, label, name, cls) {
     // filtered, aggregated and had its derived measures computed, and often
     // exists as no column in any of these.
     const src = (DS && DS.sources) || [];
-    src.forEach(s => parts.push({ name: s.name, text: s.text, tab: 'imported: ' + s.name }));
+    src.forEach(s => parts.push({
+      name: s.name, text: s.text, tab: 'imported: ' + s.name, kind: 'source', row: 2,
+    }));
     showTexPanel(parts, pgf
       ? 'TikZ redraws the figure; pgfplots plots the exported .csv'
-        + (src.length ? '; the imported files are here too, unchanged' : '')
+        + (src.length ? '; the imported files are on the row below, unchanged' : '')
       : null);
     setStatus('Export ready — ' + base + '.tex', false);
   });
