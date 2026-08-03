@@ -132,6 +132,10 @@ function dimValueLabel(dimKey, value) {
 }
 
 function metricValueAt(ctx) { return DS ? datasetValueAt(DS, ctx) : null; }
+// The same lookup, folding together the dimensions a plot is not using.
+function metricValueOver(ctx, dims, valuesOf) {
+  return DS ? datasetValueOver(DS, ctx, dims, valuesOf) : null;
+}
 function metricIgnoresDim(metricKey, dimKey) {
   return measureIgnoresDim(METRIC_BY_KEY[metricKey], dimKey, METRIC_BY_KEY);
 }

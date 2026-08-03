@@ -268,6 +268,43 @@ function datasetValueAt(ds, ctx) {
   return rawMeasureAt(ds, ctx, m.key);
 }
 
+// A dimension that is not a grouping is not a filter either: its rows stay in
+// and are folded together. Every combination of the named dimensions' values is
+// read at this tuple and aggregated the way that measure says duplicate rows
+// should be -- mean unless it declared `sum`, which is the same rule the import
+// uses when several rows land on one cell.
+//
+// `valuesOf` rather than the dimension's own domain, because what is folded
+// together should be what the plot has included: excluding a value from the
+// chart and still averaging it in would be a number from nowhere.
+function datasetValueOver(ds, ctx, dims, valuesOf) {
+  if (!dims || !dims.length) return datasetValueAt(ds, ctx);
+  let combos = [ctx];
+  for (let i = 0; i < dims.length; i++) {
+    const k = dims[i];
+    const vals = valuesOf(k) || [];
+    if (!vals.length) return null;
+    const next = [];
+    for (let c = 0; c < combos.length; c++) {
+      for (let v = 0; v < vals.length; v++) {
+        const n = Object.assign({}, combos[c]);
+        n[k] = vals[v];
+        next.push(n);
+      }
+    }
+    combos = next;
+  }
+  const m = ds.measureByKey[ctx[MEASURE_DIM]];
+  let sum = 0, n = 0;
+  for (let i = 0; i < combos.length; i++) {
+    const v = datasetValueAt(ds, combos[i]);
+    if (v === null || v === undefined || Number.isNaN(v)) continue;
+    sum += v; n++;
+  }
+  if (!n) return null;
+  return (m && m.agg === 'sum') ? sum : sum / n;
+}
+
 // Which dimensions a measure does not vary along -- a derived measure has
 // already consumed the dimension it compares over, so repeating it would draw
 // the same number once per value of it. A formula inherits that from whatever

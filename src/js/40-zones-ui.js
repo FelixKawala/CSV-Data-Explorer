@@ -92,7 +92,8 @@ function renderZonesUI(container, plot, onChange) {
 
   const grid = isGridType(plot.chartType);
   const isTable = plot.chartType === 'table';
-  const zoneTitle = { x: grid ? 'Columns' : 'X-axis', series: grid ? 'Rows' : 'Series', facet: 'Facets', panel: 'Panels' };
+  const zoneTitle = { x: grid ? 'Columns' : 'X-axis', series: grid ? 'Rows' : 'Series',
+    facet: 'Facets', panel: 'Panels', off: 'Not used' };
   const zoneHint = {
     x: isTable ? 'each combination becomes one value column; headings nest left → right'
        : grid ? 'nested left → right (first = outermost)'
@@ -102,9 +103,14 @@ function renderZonesUI(container, plot, onChange) {
        : 'colour of the bars within each group',
     facet: 'splits into separate charts — usually leave empty',
     panel: PANEL_ZONE.hint,
+    off: 'still in the data and averaged over — names nothing, orders nothing, splits nothing',
   };
-  // the Panels zone only exists once Metric is an active grouping dimension
-  const zoneList = plan.metricActive ? ZONES.concat([PANEL_ZONE]) : ZONES;
+  // the Panels zone only exists once Metric is an active grouping dimension.
+  // "Not used" goes last of all: it is where a dimension goes to stop taking
+  // part, so it reads as the end of the row rather than as another axis.
+  const onChart = ZONES.filter(z => z.key !== OFF_ZONE);
+  const offBox = ZONES.filter(z => z.key === OFF_ZONE);
+  const zoneList = (plan.metricActive ? onChart.concat([PANEL_ZONE]) : onChart).concat(offBox);
 
   function makeZoneChip(dimKey, zoneKey, idx, count) {
     const isMetric = dimKey === 'metric';
@@ -148,7 +154,9 @@ function renderZonesUI(container, plot, onChange) {
 
     const sel = document.createElement('select');
     sel.setAttribute('aria-label', 'Zone for ' + lbl.textContent);
-    (isMetric ? ZONES.concat([PANEL_ZONE]) : ZONES).forEach(z => {
+    // Metric picks a column rather than filtering rows, so there is nothing to
+    // average it over: it is offered Panels instead of Not used.
+    (isMetric ? ZONES.filter(z => z.key !== OFF_ZONE).concat([PANEL_ZONE]) : ZONES).forEach(z => {
       const o = document.createElement('option');
       o.value = z.key; o.textContent = zoneTitle[z.key];
       sel.appendChild(o);
@@ -185,6 +193,7 @@ function renderZonesUI(container, plot, onChange) {
       html('div', 'zone-empty', body).textContent =
         z.key === 'facet' ? 'none — everything stays in one chart'
         : z.key === 'panel' ? 'drop Metric here to stack one sub-chart per metric'
+        : z.key === OFF_ZONE ? 'none — every dimension is in play'
         : 'drop a dimension here';
     }
     dims.forEach((dimKey, i) => body.appendChild(makeZoneChip(dimKey, z.key, i, dims.length)));
@@ -225,6 +234,13 @@ function renderDimIncludedBlock(container, plot, dimKey, onChange) {
   const dim = DIM_BY_KEY[dimKey];
   const block = html('div', 'dim-block', container);
   html('div', 'dim-label', block).textContent = dim.label;
+  // Shown/Available still means something for a dimension that is not on the
+  // chart: it decides what gets folded into the average, not what appears.
+  if ((plot.zones[OFF_ZONE] || []).indexOf(dimKey) !== -1) {
+    html('div', 'dim-note', block).textContent =
+      'Not used in this plot — the values below are averaged together, and one '
+      + 'left in Available is left out of that average.';
+  }
 
   const dual = html('div', 'dual-list', block);
   const includedCol = html('div', 'dual-col', dual);

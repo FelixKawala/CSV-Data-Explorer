@@ -39,12 +39,23 @@ function defaultIncluded(dimKey, zones) {
 // dims can sit on the X-axis at once — they nest left-to-right (first = outermost
 // band, last = innermost bar group), so several dimensions can be compared inside
 // ONE chart instead of being split into separate facet cards. Facets are opt-in.
+// A dimension in OFF_ZONE is still in the data: its rows are folded together
+// rather than filtered out, so every number on the chart is an average across
+// it. What it stops doing is naming, ordering and splitting -- which is the
+// whole request: a folder level that is part of the provenance and none of the
+// story should not be forced onto an axis to get it out of the way.
+const OFF_ZONE = 'off';
 const ZONES = [
   { key: 'x',      label: 'X-axis',  hint: 'nested left → right (first = outermost band)' },
   { key: 'series', label: 'Series',  hint: 'colour of the bars within each group' },
   { key: 'facet',  label: 'Facets',  hint: 'splits into separate charts — usually leave empty' },
+  { key: OFF_ZONE, label: 'Not used', hint: 'kept in the data and averaged over — it names nothing and splits nothing' },
 ];
 const ZONE_KEYS = ZONES.map(z => z.key);
+// The three that put a dimension somewhere on the chart. Metric may only ever
+// be one of these (or Panels): it selects a column rather than filtering rows,
+// so there is nothing to average it over.
+const AXIS_ZONE_KEYS = ZONE_KEYS.filter(k => k !== OFF_ZONE);
 // Metric-only fourth zone. A a percentage and a raw count share no y-scale, so
 // they can never be bars on one axis — stacked panels over a shared x-axis is the
 // correct way to read them together.
@@ -61,10 +72,10 @@ function supportsDualAxis(t) { return isCartesian(t) || t === 'diverging'; }
 function isGridType(t) { return t === 'matrix' || t === 'table'; }
 
 const PANEL_ZONE = { key: 'panel', label: 'Panels', hint: 'one stacked sub-chart per metric over a shared x-axis — the way to combine a percentage and a raw count' };
-const METRIC_ZONE_KEYS = ZONE_KEYS.concat([PANEL_ZONE.key]);
+const METRIC_ZONE_KEYS = AXIS_ZONE_KEYS.concat([PANEL_ZONE.key]);
 
 function makeDefaultPlot() {
-  const zones = defaultZones();
+  const zones = normaliseZones(defaultZones());
   const included = {};
   DIM_KEYS.forEach(k => { included[k] = defaultIncluded(k, zones); });
   return {
@@ -111,11 +122,15 @@ function cloneAxisMap(by) {
   Object.keys(by || {}).forEach(k => { out[k] = Object.assign({ min: null, max: null, scale: 'auto' }, by[k]); });
   return out;
 }
-function cloneZones(z) {
+// Every zone present, even the ones a caller did not think about: a layout
+// written before "Not used" existed -- a preset, a saved view, an old autosave --
+// simply has no list for it.
+function normaliseZones(z) {
   const out = {};
-  ZONE_KEYS.forEach(k => { out[k] = z[k].slice(); });
+  ZONE_KEYS.forEach(k => { out[k] = Array.isArray(z && z[k]) ? z[k].slice() : []; });
   return out;
 }
+function cloneZones(z) { return normaliseZones(z); }
 function clonePlot(p) {
   return {
     id: plotIdSeq++,
@@ -153,9 +168,10 @@ function resetPlots() { plots = hasDataset() ? [makeDefaultPlot()] : []; }
 function zoneSummary(z) {
   const names = list => list.map(k => (DIM_BY_KEY[k] ? DIM_BY_KEY[k].label : k)).join(' × ');
   const parts = [];
-  if (z.x.length) parts.push('x-axis: ' + names(z.x));
-  if (z.series.length) parts.push('colour: ' + names(z.series));
-  if (z.facet.length) parts.push('one chart per ' + names(z.facet));
+  if (z.x && z.x.length) parts.push('x-axis: ' + names(z.x));
+  if (z.series && z.series.length) parts.push('colour: ' + names(z.series));
+  if (z.facet && z.facet.length) parts.push('one chart per ' + names(z.facet));
+  if (z[OFF_ZONE] && z[OFF_ZONE].length) parts.push('averaged over ' + names(z[OFF_ZONE]));
   return parts.join(' · ');
 }
 
@@ -197,7 +213,7 @@ function layoutPresets() {
   const seen = {};
   const uniq = out.filter(p => {
     const z = p.zones();
-    const sig = ZONE_KEYS.map(k => k + ':' + z[k].join(',')).join('|');
+    const sig = ZONE_KEYS.map(k => k + ':' + ((z[k] || []).join(','))).join('|');
     if (seen[sig]) return false;
     seen[sig] = true;
     p.hint = zoneSummary(z);

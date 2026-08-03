@@ -47,7 +47,7 @@ function renderBuilderToolbar() {
         undoSnapshot = serializePlots();
         const plot = plots[0] || makeDefaultPlot();
         if (!plots.length) plots.push(plot);
-        plot.zones = p.zones();
+        plot.zones = normaliseZones(p.zones());
         Object.keys(plot.included).forEach(k => {
           if (k === MEASURE_DIM) return;
           const facet = plot.zones.facet.indexOf(k) !== -1;

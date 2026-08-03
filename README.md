@@ -147,6 +147,24 @@ facets, and the ones that vary get their chart per value as usual. A calculated 
 operands have it — `Δ rate × count` still varies along the compared dimension,
 through the count.
 
+## Leaving a dimension out
+
+A fourth zone, **Not used**, sits after X-axis, Series and Facets. A dimension
+dropped there is still in the data — its rows are folded together rather than
+filtered out — but it names nothing, orders nothing and splits nothing. This is
+for the dimension that is part of the provenance and none of the story: a folder
+level, a run id, a machine that was the same throughout.
+
+Every number on the chart is then an aggregate across it, and the chart says so
+above itself. The aggregate is the one the measure declares — a mean, or a sum
+for a measure imported as one — which is the same rule the import uses when
+several rows land on one cell. The dimension keeps its **Shown / Available**
+list, and it still means something there: a value left in Available is left out
+of the average.
+
+Metric is never offered this zone. It selects a column rather than filtering
+rows, so there is nothing to average it over; it gets **Panels** instead.
+
 ## Renaming and retyping a measure
 
 **Rename / retype measures** (Builder toolbar) changes what a measure is called

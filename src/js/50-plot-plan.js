@@ -28,7 +28,10 @@ function computeAxisPlan(plot) {
   // wherever the user actually put it (so it stays draggable); `axisDims` drives the
   // chart and pulls Metric out of the axes when it is being drawn as panels.
   const zoneDims = {}, axisDims = {};
-  ZONE_KEYS.forEach(k => { zoneDims[k] = plot.zones[k].slice(); axisDims[k] = plot.zones[k].slice(); });
+  ZONE_KEYS.forEach(k => {
+    const arr = Array.isArray(plot.zones[k]) ? plot.zones[k].slice() : [];
+    zoneDims[k] = arr; axisDims[k] = arr.slice();
+  });
   zoneDims[PANEL_ZONE.key] = [];
   axisDims[PANEL_ZONE.key] = [];
   let metricPanels = null;
@@ -68,10 +71,17 @@ function computeAxisPlan(plot) {
       axisDims[k] = axisDims[k].filter(dk => ignoredDims.indexOf(dk) === -1);
     });
   }
+  // Not a grouping and not a filter: the values are read and folded together,
+  // so a dimension parked here changes what every number IS without changing
+  // where any of them sits. A measure that is constant along it is already
+  // averaged over it by definition, so it is not listed twice.
+  const offDims = axisDims[OFF_ZONE].filter(
+    k => DIM_BY_KEY[k] && ignoredDims.indexOf(k) === -1);
   let seriesCount = 1;
   axisDims.series.forEach(k => { seriesCount *= Math.max(plot.included[k].length, 0); });
   return {
     ignoredDims: ignoredDims,
+    offDims: offDims,
     metricActive: metricActive,
     zoneDims: zoneDims,
     facetDims: axisDims.facet,
@@ -417,9 +427,14 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
       || ((style.barPattern === 'auto' || seriesNeedMark) ? barPatternAt(slot) : style.barPattern);
   });
 
+  // Dimensions the plot is not using are folded together here rather than left
+  // out of the tuple: a ctx missing a dimension names no row at all, so without
+  // this the chart would be empty rather than averaged.
+  const offDims = (axes.offDims || []).filter(k => fixed[k] === undefined);
+  const offValues = k => plot.included[k] || [];
   function getValue(sEntry, xEntry) {
     const ctx = Object.assign({}, fixed, sEntry.vals, xEntry.vals);
-    return metricValueAt(ctx);
+    return offDims.length ? metricValueOver(ctx, offDims, offValues) : metricValueAt(ctx);
   }
   // drop combinations that have no data at all (e.g. 1024-line configs on the dev1,
   // or Tuned-altnterleaved on apps that don't have it) so the axis has no dead slots
@@ -577,7 +592,7 @@ function renderFacetLevel(plot, remaining, fixed, container, axes) {
 
 function axesFromPlan(plan) {
   return {
-    seriesDims: plan.seriesDims, xDims: plan.xDims,
+    seriesDims: plan.seriesDims, xDims: plan.xDims, offDims: plan.offDims,
     metricPanels: plan.metricPanels, forcedPanels: plan.forcedPanels,
     dualAxis: plan.dualAxis,
   };
@@ -652,6 +667,16 @@ function renderPlotChart(plot, container) {
       + ' not a grouping here — this measure already compares or averages across '
       + (names.length === 1 ? 'it' : 'them')
       + ', so one chart per value would be the same chart over again.';
+  }
+  if (plan.offDims.length) {
+    const names = plan.offDims.map(k => DIM_BY_KEY[k].label);
+    const counts = plan.offDims.map(k => (plot.included[k] || []).length);
+    const many = counts.some(n => n > 1);
+    html('div', 'chart-note', container).textContent =
+      names.join(' and ') + (names.length === 1 ? ' is' : ' are') + ' not used here'
+      + (many
+        ? ' — every value below is an average across ' + (names.length === 1 ? 'it' : 'them') + '.'
+        : ' — one value each, so nothing is averaged away.');
   }
   const fixed = {};
   if (!plan.metricActive) fixed.metric = plot.included.metric[0];
