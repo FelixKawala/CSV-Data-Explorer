@@ -361,6 +361,15 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     html('div', 'plot-empty', container).textContent = 'Nothing to show - enable at least one value for ' + DIM_BY_KEY[emptyDim].label + '.';
     return;
   }
+  // A dimension that is not used still decides what is averaged, so emptying it
+  // empties every cell -- which reads as "no data" and is not.
+  const emptyOff = (axes.offDims || []).find(k => plot.included[k].length === 0);
+  if (emptyOff) {
+    html('div', 'plot-empty', container).textContent =
+      DIM_BY_KEY[emptyOff].label + ' is not used here, so its shown values are what '
+      + 'every number is averaged over — and none of them are shown. Enable at least one.';
+    return;
+  }
   const isTable = plot.chartType === 'table';
   const dual = !!axes.dualAxis;
   const kindInfo = effectiveKind(plot, fixed);
@@ -672,11 +681,16 @@ function renderPlotChart(plot, container) {
     const names = plan.offDims.map(k => DIM_BY_KEY[k].label);
     const counts = plan.offDims.map(k => (plot.included[k] || []).length);
     const many = counts.some(n => n > 1);
+    const none = counts.some(n => n === 0);
     html('div', 'chart-note', container).textContent =
       names.join(' and ') + (names.length === 1 ? ' is' : ' are') + ' not used here'
-      + (many
-        ? ' — every value below is an average across ' + (names.length === 1 ? 'it' : 'them') + '.'
-        : ' — one value each, so nothing is averaged away.');
+      + (none
+        ? ' — and nothing is shown for '
+          + (names.length === 1 ? 'it' : 'one of them')
+          + ', so there is nothing left to average.'
+        : many
+          ? ' — every value below is an average across ' + (names.length === 1 ? 'it' : 'them') + '.'
+          : ' — one value each, so nothing is averaged away.');
   }
   const fixed = {};
   if (!plan.metricActive) fixed.metric = plot.included.metric[0];

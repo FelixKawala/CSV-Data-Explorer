@@ -165,6 +165,19 @@ console.log('\n=== 6. It survives a save and a reload ===');
   w.close();
 }
 
+console.log('\n=== 6b. Emptying its values says so rather than saying "no data" ===');
+{
+  const { w, d } = boot();
+  setZone(w, d, 'device', 'off');
+  w.eval('plots[0].included.device = []; renderPlots();');
+  const msg = (d.querySelector('#plots .plot-empty') || {}).textContent || '';
+  ok(/averaged over/.test(msg) && /Enable at least one/.test(msg),
+     'the refusal names the cause', msg.slice(0, 90));
+  const note = Array.from(d.querySelectorAll('#plots .chart-note')).map(n => n.textContent).join(' ');
+  ok(!/nothing is averaged away/.test(note), 'and the note above does not claim otherwise', note);
+  w.close();
+}
+
 console.log('\n=== 7. Everything parked is still a chart, not an error ===');
 {
   const { w, d } = boot();
