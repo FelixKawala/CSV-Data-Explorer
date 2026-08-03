@@ -226,6 +226,40 @@ console.log('\n=== 3e. The exports sit together ===');
   w.close();
 }
 
+console.log('\n=== 3f. Diverging bars can carry a second scale too ===');
+{
+  const { w, d } = boot();
+  // its value axis is horizontal, so a second scale is a second tick row
+  Array.from(cols(d)[0].querySelectorAll('.dnd-chip'))
+    .find(c => c.textContent.trim().indexOf('Rate A') === 0).click();
+  add(d, 'Δ Rate A (Tuned−Base)');
+  add(d, 'Δ Count A (Tuned vs Base)');
+  setType(w, d, 'diverging');
+  ok(w.eval('computeAxisPlan(plots[0]).dualEligible'),
+     'the second axis is offered on a diverging chart');
+  ok(dualOn(w, d), 'and can be switched on');
+
+  ok(d.querySelectorAll('#plots .plot-empty').length === 0, 'it draws');
+  const sec = d.querySelectorAll('#plots rect.bar-secondary').length;
+  ok(sec > 0 && sec < d.querySelectorAll('#plots rect.bar').length,
+     'some bars are on the second scale, not all',
+     sec + ' of ' + d.querySelectorAll('#plots rect.bar').length);
+  const lower = Array.from(d.querySelectorAll('#plots text.axis-label:not(.axis-secondary)')).map(t => t.textContent);
+  const upper = Array.from(d.querySelectorAll('#plots text.axis-secondary')).map(t => t.textContent);
+  ok(lower.some(t => /pt$/.test(t)), 'the lower ticks are in points', lower.join(','));
+  ok(upper.length > 0 && upper.every(t => /%$/.test(t)), 'the upper ticks in per cent', upper.join(','));
+  ok(upper.indexOf('0%') !== -1 && lower.indexOf('0pt') !== -1,
+     'both meet at zero, which is the one thing they agree on');
+  const caps = Array.from(d.querySelectorAll('#plots .legend-cap')).map(t => t.textContent);
+  ok(caps.length === 2 && /Lower axis/.test(caps[0]) && /Upper axis/.test(caps[1]),
+     'the key names which row of ticks is which', caps.join(' | '));
+  ok(/outlined/.test(caps[1]), 'and how to tell the bars apart', caps[1]);
+  const note = d.querySelector('#plots .legend-note');
+  ok(!!note && /says nothing about a length on the other/.test(note.textContent),
+     'with the cost of two scales stated', note && note.textContent);
+  w.close();
+}
+
 console.log('\n=== 4. Line settings are reachable from a chart that draws lines ===');
 {
   const { w, d } = boot();
@@ -331,6 +365,57 @@ console.log('\n=== 7b. And it is findable before there are two measures ===');
   ok(sel.disabled, 'greyed, because with one measure it would say nothing');
   const hint = sel.parentNode.querySelector('.radio-hint');
   ok(/one measure shown/.test(hint.textContent), 'and it says why', hint.textContent);
+  w.close();
+}
+
+console.log('\n=== 7c. The key is painted what the chart is painted ===');
+{
+  // Colouring by metric repaints every mark. A key still showing the series
+  // palette is a key to a chart that is not on the page.
+  const { w, d } = boot();
+  add(d, 'Rate B');
+  metricTo(w, d, 'series');
+  d.querySelector('#plots .style-toggle').click();
+  const sel = d.querySelector('#plots .style-colour-by');
+  sel.value = 'metric';
+  fire(w, sel);
+
+  const swatches = Array.from(d.querySelectorAll('#plots .legend .item'))
+    .map(i => (i.querySelector('.swatch') || {}).style.background);
+  const fills = Array.from(new Set(Array.from(d.querySelectorAll('#plots rect.bar'))
+    .map(r => r.getAttribute('fill'))));
+  ok(fills.length === 2, 'the chart uses two colours, one per measure', fills.join(','));
+  ok(new Set(swatches).size === 2, 'and so does the key', Array.from(new Set(swatches)).join(','));
+  ok(swatches.every(s => fills.indexOf(s) !== -1),
+     'every key colour is one the chart actually drew',
+     swatches.join(' | ') + ' vs ' + fills.join(','));
+  const labels = Array.from(d.querySelectorAll('#plots .legend .legend-text')).map(t => t.textContent);
+  ok(labels.length === 6 && labels.every(t => /Rate A|Rate B/.test(t)),
+     'while the labels still name the whole series', labels.join(' | '));
+  w.close();
+}
+
+console.log('\n=== 7d. Series that lose colour are given something else ===');
+{
+  const { w, d } = boot();
+  add(d, 'Rate B');
+  metricTo(w, d, 'x');          // metric is not a series dim: colour cannot key both
+  d.querySelector('#plots .style-toggle').click();
+  ok(d.querySelector('#plots .style-pattern').value === 'none', 'textures are off plot-wide');
+  ok(d.querySelectorAll('#plots rect.bar-texture').length === 0, 'and none is drawn');
+
+  const sel = d.querySelector('#plots .style-colour-by');
+  sel.value = 'metric';
+  fire(w, sel);
+  ok(d.querySelectorAll('#plots rect.bar-texture').length > 0,
+     'now the series get textures, because colour is no longer telling them apart',
+     d.querySelectorAll('#plots rect.bar-texture').length);
+  const swatches = Array.from(d.querySelectorAll('#plots .legend:not(.metric-legend) .item'))
+    .map(i => !!i.querySelector('.swatch-svg'));
+  ok(swatches.every(Boolean), 'the series key shows those textures, not a colour');
+  const note = d.querySelector('#plots .legend-note');
+  ok(!!note && /colour follows the metric/.test(note.textContent) && /texture/.test(note.textContent),
+     'and says what is doing the work now', note && note.textContent);
   w.close();
 }
 

@@ -281,8 +281,12 @@ function measureIgnoresDim(m, dimKey, byKey) {
     return m.derived.over === dimKey
       || (m.derived.hold || []).indexOf(dimKey) !== -1;
   }
+  // EVERY operand, not any: `delta * count` still varies along the compared
+  // dimension, because the count does. `some` said it did not, which would have
+  // collapsed a grouping that carries real variation.
   if (m.formula && byKey) {
-    return m.formula.refs.some(k => k !== m.key && measureIgnoresDim(byKey[k], dimKey, byKey));
+    const refs = m.formula.refs.filter(k => k !== m.key);
+    return refs.length > 0 && refs.every(k => measureIgnoresDim(byKey[k], dimKey, byKey));
   }
   return false;
 }

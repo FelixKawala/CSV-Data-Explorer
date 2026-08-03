@@ -29,17 +29,18 @@ function legendMode(sVals, style, chartType) {
   return textured ? 'bar' : 'flat';
 }
 
-function legendGlyph(item, s, mode) {
+function legendGlyph(item, s, mode, paint) {
+  const fill = paint || s.color;
   if (mode === 'flat') {
-    html('span', 'swatch', item).style.background = s.color;
+    html('span', 'swatch', item).style.background = fill;
     return;
   }
   const svg = el('svg', { class: 'swatch-svg', width: 12, height: 12, viewBox: '0 0 14 14' });
   if (mode === 'mark') {
     // its own class: a key is not a data point, and things count data points
-    drawMark(svg, s.shape || 'circle', 7, 7, 5, { fill: s.color, class: 'swatch-mark' });
+    drawMark(svg, s.shape || 'circle', 7, 7, 5, { fill: fill, class: 'swatch-mark' });
   } else {
-    el('rect', { x: 1, y: 3, width: 12, height: 8, rx: 2, fill: s.color }, svg);
+    el('rect', { x: 1, y: 3, width: 12, height: 8, rx: 2, fill: fill }, svg);
     const tex = patternFill(svg, s.pattern, 'var(--text-primary)');
     if (tex) {
       el('rect', { x: 1, y: 3, width: 12, height: 8, rx: 2, fill: tex, opacity: 0.5 }, svg);
@@ -52,15 +53,31 @@ function legendGlyph(item, s, mode) {
 // was a mistake: what they agree on is often the measure, and a key that has
 // stopped naming the measure is not saying less, it is saying the wrong thing.
 // A long label is a cost worth paying for one that is right.
-function seriesLegend(container, sVals, seriesDims, style, chartType) {
+// `opts.colourFor(s)` is the colour a series is ACTUALLY drawn in, when that is
+// not `s.color`: colouring by metric repaints every mark, and a key still
+// showing the series palette is a key to a chart that is not on the page. It
+// returns null where a series has no single colour -- the metric varies inside
+// it -- and then the swatch drops colour altogether rather than picking one of
+// the several it might have meant.
+function seriesLegend(container, sVals, seriesDims, style, chartType, opts) {
   if (sVals.length <= 1) return;
+  opts = opts || {};
   const legend = html('div', 'legend', container);
   const mode = legendMode(sVals, style, chartType);
+  let neutral = false;
   sVals.forEach(s => {
     const item = html('div', 'item', legend);
-    legendGlyph(item, s, mode);
+    const paint = opts.colourFor ? opts.colourFor(s) : s.color;
+    if (!paint) neutral = true;
+    legendGlyph(item, s, mode, paint || 'var(--text-muted)');
     html('span', 'legend-text', item).textContent = s.label;
   });
+  if (neutral) {
+    html('div', 'legend-note', legend).textContent =
+      'colour follows the metric here — these are told apart by '
+      + (mode === 'mark' ? 'shape' : mode === 'bar' ? 'texture' : 'their order in each group')
+      + '.';
+  }
 }
 
 // ---- shared cartesian layout (bars, lines, dual-axis all use these) ----

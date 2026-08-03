@@ -41,7 +41,7 @@ function computeAxisPlan(plot) {
     // a second y-axis is only meaningful for a cartesian chart whose series carry
     // the differing metrics, and only for exactly two scales
     dualAxis = !!plot.dualAxis && mixedKinds && groups.length === 2
-      && mz === 'series' && isCartesian(plot.chartType);
+      && mz === 'series' && supportsDualAxis(plot.chartType);
     // "One axis" is a decision, not a default: two measures can differ in kind
     // and still be readable together -- a rate and a relative change are both
     // percentages, and forcing them apart says they are less comparable than
@@ -57,9 +57,21 @@ function computeAxisPlan(plot) {
       axisDims[mz].splice(at, 0, 'metric');
     }
   }
+  // A dimension every shown measure is constant along is not a grouping in ANY
+  // zone. Dropping it from Series and X but not from Facets left the compared
+  // dimension splitting the page into one chart per value of itself, each an
+  // identical copy -- the comparison had already consumed it, so every copy
+  // held the same numbers.
+  const ignoredDims = metricsIgnoredDims(plot.included[MEASURE_DIM]);
+  if (ignoredDims.length) {
+    ZONE_KEYS.forEach(k => {
+      axisDims[k] = axisDims[k].filter(dk => ignoredDims.indexOf(dk) === -1);
+    });
+  }
   let seriesCount = 1;
   axisDims.series.forEach(k => { seriesCount *= Math.max(plot.included[k].length, 0); });
   return {
+    ignoredDims: ignoredDims,
     metricActive: metricActive,
     zoneDims: zoneDims,
     facetDims: axisDims.facet,
@@ -70,7 +82,7 @@ function computeAxisPlan(plot) {
     mixedKinds: mixedKinds,
     forcedPanels: forcedPanels,
     dualAxis: dualAxis,
-    dualEligible: mixedKinds && groups.length === 2 && isCartesian(plot.chartType),
+    dualEligible: mixedKinds && groups.length === 2 && supportsDualAxis(plot.chartType),
     metricKinds: kindNames,
     // whether an override is on offer, and whether it is doing anything
     oneAxisEligible: groups.length > 1 && !isGridType(plot.chartType),
@@ -101,27 +113,34 @@ function comboEntries(plot, dims) {
   return out;
 }
 
-// Yields the format the leaf should draw with, plus the dimension (if any) the
-// measures in play do not vary along, so a comparison is not repeated once per
-// value of the thing it already compares.
+// The dimensions that EVERY measure in play is constant along. A comparison has
+// already consumed the dimension it compares over, and one it averages over; a
+// formula built on one inherits that. Grouping by such a dimension draws the
+// same number once per value of it, which reads as data and is not.
+//
+// Every measure, because the axis is shared: a dimension one measure is flat
+// along is still a grouping for another that varies along it.
+function metricsIgnoredDims(inPlay) {
+  const keys = inPlay || [];
+  if (!keys.length) return [];
+  return GROUPABLE_KEYS.filter(k => keys.every(mk => metricIgnoresDim(mk, k)));
+}
+
+// Yields the format the leaf should draw with, plus the dimensions the measures
+// in play do not vary along, so a comparison is not repeated once per value of
+// the thing it already compares.
 function effectiveKind(plot, fixed) {
   const inPlay = (fixed[MEASURE_DIM] !== undefined) ? [fixed[MEASURE_DIM]] : plot.included[MEASURE_DIM];
   const formats = [];
   const groups = [];
-  const ignored = [];
   inPlay.forEach(mk => {
     const m = METRIC_BY_KEY[mk];
     if (!m) return;
     if (groups.indexOf(m.format.axisGroup) === -1) { groups.push(m.format.axisGroup); formats.push(m.format); }
-    // the compared dimension AND any the comparison averages over: the measure
-    // is one number for all of them, so grouping by either repeats it
-    const eaten = m.derived ? [m.derived.over].concat(m.derived.hold || []) : [];
-    eaten.forEach(k => { if (k && ignored.indexOf(k) === -1) ignored.push(k); });
   });
-  // only where EVERY measure on the chart ignores it; otherwise it is still a
-  // grouping for the ones that do vary along it
-  const ignoredDims = ignored.filter(
-    k => inPlay.every(mk => measureIgnoresDim(METRIC_BY_KEY[mk], k)));
+  // Inside a panel `inPlay` is the one measure that panel draws, so this is
+  // narrower than the plan-wide answer and catches what that could not.
+  const ignoredDims = metricsIgnoredDims(inPlay);
   if (groups.length === 1) return { kind: formats[0], mixed: false, ignoredDims };
   // Forced onto one axis: the first measure's format decides how the axis reads,
   // and the caller says so on the chart rather than letting it pass unremarked.
@@ -376,6 +395,11 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
   // to the series' slot rather than its index, so a series keeps its whole
   // appearance when other series drop out of a facet.
   const style = plot.style || (plot.style = defaultPlotStyle());
+  // Colouring by metric hands colour to the measure, so it is no longer telling
+  // the series apart -- and if nothing else is, they are distinguished by
+  // nothing at all. Give them a shape or a texture instead.
+  const seriesNeedMark = style.colourBy === 'metric'
+    && sDims.indexOf(MEASURE_DIM) === -1 && seriesAll.length > 1;
   seriesAll.forEach((e, i) => {
     const slot = (sDims.length === 1 && DIM_BY_KEY[sDims[0]])
       ? Math.max(DIM_BY_KEY[sDims[0]].values.indexOf(e.vals[sDims[0]]), 0) : i;
@@ -384,10 +408,13 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     e.color = ov.color || ((sDims.length === 1)
       ? paletteDimValueColor(style.palette, sDims[0], e.vals[sDims[0]])
       : paletteColorAt(style.palette, i));
+    // "none" for markers is a deliberate choice and is left alone; a fixed
+    // shape or a solid fill is only a default, and yields.
     e.shape = ov.shape
-      || (style.markers === 'auto' ? markShapeAt(slot) : style.markers);
+      || ((style.markers === 'auto' || (seriesNeedMark && style.markers !== 'none'))
+        ? markShapeAt(slot) : style.markers);
     e.pattern = ov.pattern
-      || (style.barPattern === 'auto' ? barPatternAt(slot) : style.barPattern);
+      || ((style.barPattern === 'auto' || seriesNeedMark) ? barPatternAt(slot) : style.barPattern);
   });
 
   function getValue(sEntry, xEntry) {
@@ -486,6 +513,7 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     showXLabels: opts.showXLabels !== false,
     showLegend: opts.showLegend !== false,
   };
+  spec.dualAxis = dual;
   if (isTable) renderTableLeaf(container, spec);
   else if (plot.chartType === 'matrix') renderMatrixLeaf(container, spec);
   else if (plot.chartType === 'diverging') renderBarLeafDiverging(container, spec);
@@ -562,6 +590,17 @@ function renderPlotChart(plot, container) {
     return;
   }
   const plan = computeAxisPlan(plot);
+  // Said once, above everything, because the drop is a decision about the whole
+  // plot: the chips are still where the user put them and the chart is quietly
+  // not using them.
+  if (plan.ignoredDims.length) {
+    const names = plan.ignoredDims.map(k => DIM_BY_KEY[k].label);
+    html('div', 'chart-note', container).textContent =
+      names.join(' and ') + (names.length === 1 ? ' is' : ' are')
+      + ' not a grouping here — this measure already compares or averages across '
+      + (names.length === 1 ? 'it' : 'them')
+      + ', so one chart per value would be the same chart over again.';
+  }
   const fixed = {};
   if (!plan.metricActive) fixed.metric = plot.included.metric[0];
   renderFacetLevel(plot, plan.facetDims, fixed, container, axesFromPlan(plan));

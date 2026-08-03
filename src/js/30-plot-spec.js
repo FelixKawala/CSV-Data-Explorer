@@ -53,6 +53,10 @@ const CHART_TYPES = [
   ['diverging', 'Diverging bars'], ['matrix', 'Matrix'], ['table', 'Table'],
 ];
 function isCartesian(t) { return t === 'bars' || t === 'lines'; }
+// A diverging chart is cartesian too, just laid on its side: its value axis is
+// horizontal. That is enough to carry a second scale, so it is offered one --
+// but it is not `isCartesian`, which elsewhere means "has a vertical y-axis".
+function supportsDualAxis(t) { return isCartesian(t) || t === 'diverging'; }
 // charts that name their axes Rows/Columns rather than Series/X-axis
 function isGridType(t) { return t === 'matrix' || t === 'table'; }
 

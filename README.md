@@ -129,7 +129,15 @@ comparison will cover and names the dimension standing in the way. Ticking that
 dimension under **not holding fixed** averages over it instead, and the measure
 is named for what it then is (`…, mean over Compute cap`). Neither the compared
 dimension nor an averaged one is left as a grouping on the chart, since both
-would draw one number several times.
+would draw one number several times — and that holds in **every** zone, Facets
+included, where one chart per value would be the same chart over again. The chip
+stays where you put it; the chart says once, at the top, that it is not using it.
+
+A dimension is only dropped when *every* measure on the chart is constant along
+it: a comparison and a raw measure side by side still need it, because the raw
+one varies. A calculated measure inherits the property only if all of its
+operands have it — `Δ rate × count` still varies along the compared dimension,
+through the count.
 
 ## Renaming and retyping a measure
 
@@ -194,9 +202,12 @@ larger one.
 
 **Colour by** in the Style panel switches colour from the series to the metric.
 Where Metric is on the x-axis every bar would otherwise be one colour, and this
-gives each measure its own wherever it is drawn, with a key of its own. pgfplots
-gives one colour per `\addplot`, so an export of such a chart says in a comment
-that it cannot reproduce it.
+gives each measure its own wherever it is drawn — the same two colours in every
+facet — with a key of its own. Colour is then no longer telling the *series*
+apart, so they are given a texture (bars) or a shape (lines) instead and their
+key shows that rather than a colour it is no longer painted in. pgfplots gives
+one colour per `\addplot`, so an export of such a chart says in a comment that
+it cannot reproduce it.
 
 The **Y** control in the plot head sets the scale (auto / linear / log) and the
 range. An empty bound fits the data; a number is used exactly as typed. Values
@@ -219,6 +230,11 @@ The second axis takes a *scale*, not a measure: two hit rates and a duration put
 both rates on the left and the duration on the right, rather than the third
 measure going undrawn. Past two scales it is withdrawn — a frame has two axes —
 and the head says so instead of the control simply disappearing.
+
+Diverging bars can carry one too. Their value axis runs across the page, so the
+second scale is a second row of ticks above the chart rather than a second side,
+and its bars are outlined instead of solid. Both rows meet at zero, which is the
+one thing the two scales agree on.
 
 A chart that draws lines offers the line and marker settings whether or not it
 is a line chart — a bar chart with a second axis draws its right-hand series as

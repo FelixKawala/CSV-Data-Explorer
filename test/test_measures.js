@@ -271,6 +271,55 @@ console.log('\n=== 6d. Removing something another measure is built on is refused
   w.close();
 }
 
+console.log('\n=== 6e. A consumed dimension is dropped from EVERY zone, facets too ===');
+{
+  // Series and X were filtered; Facets were not, and facets are resolved before
+  // the leaf ever asks. So a comparison over a dimension sitting in Facets split
+  // the page into one chart per value of itself -- every one an identical copy,
+  // because the comparison had already eaten that dimension.
+  const { w, d } = boot();
+  w.eval('addDerivedMeasure({op:"diff",base:"rateA",over:"dataset",'
+    + 'a:DIM_BY_KEY.dataset.values[0],b:DIM_BY_KEY.dataset.values[1]})');
+  const key = w.eval('customMeasures()[0].key');
+  w.eval('plots[0].included.metric = ["' + key + '"];'
+    + 'plots[0].included.dataset = DIM_BY_KEY.dataset.values.slice();'
+    + 'plots[0].zones = {x:["device","size","app"], series:["variant"], facet:["dataset"]};'
+    + 'renderPlots();');
+  ok(w.eval('JSON.stringify(computeAxisPlan(plots[0]).ignoredDims)') === '["dataset"]',
+     'the compared dimension is named as consumed, and nothing else is',
+     w.eval('JSON.stringify(computeAxisPlan(plots[0]).ignoredDims)'));
+  ok(w.eval('computeAxisPlan(plots[0]).facetDims.length') === 0, 'so it is not a facet');
+  ok(d.querySelectorAll('#plots .facet-card').length === 0,
+     'and the page is not split into copies of one chart',
+     d.querySelectorAll('#plots .facet-card').length);
+  ok(d.querySelectorAll('#plots svg').length === 1, 'one chart', d.querySelectorAll('#plots svg').length);
+  const note = d.querySelector('#plots .chart-note');
+  ok(!!note && /already compares/.test(note.textContent) && /same chart over again/.test(note.textContent),
+     'with the reason said once, at the top', note && note.textContent);
+  ok(w.eval('JSON.stringify(plots[0].zones.facet)') === '["dataset"]',
+     'the chip stays where the user put it — this is about what is drawn, not about the layout',
+     w.eval('JSON.stringify(plots[0].zones.facet)'));
+  w.close();
+}
+
+console.log('\n=== 6f. A formula only ignores what ALL its operands ignore ===');
+{
+  const { w } = boot();
+  // rateA_dTuned compares over `variant`; countA does not. Their product still
+  // varies along variant, and `some` said it did not.
+  w.eval('addCustomMeasure({key:"mix",label:"Mixed",format:makeFormat("count"),'
+    + 'formula:compileFormula("[\\u0394 Rate A (Tuned\\u2212Base)] * [Count A]", METRICS, "count")})');
+  ok(w.eval('JSON.stringify(METRIC_BY_KEY.mix.formula.refs)').indexOf('countA') !== -1,
+     'the formula refers to both', w.eval('JSON.stringify(METRIC_BY_KEY.mix.formula.refs)'));
+  ok(!w.eval('metricIgnoresDim("mix", "variant")'),
+     'so it does vary along the compared dimension, through the count');
+  w.eval('addCustomMeasure({key:"pure",label:"Pure",format:makeFormat("delta"),'
+    + 'formula:compileFormula("[\\u0394 Rate A (Tuned\\u2212Base)] * 2", METRICS, "delta")})');
+  ok(w.eval('metricIgnoresDim("pure", "variant")'),
+     'while one built only on the comparison still does not');
+  w.close();
+}
+
 console.log('\n=== 7. Coverage counts partial overlap honestly ===');
   {
     const { w } = boot();

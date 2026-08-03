@@ -72,7 +72,8 @@ function renderBarLeaf(container, spec) {
   if (spec.showLegend !== false) {
     if (signColoured) polarityLegend(container);
     else {
-      seriesLegend(container, sVals, spec.seriesDims, spec.style, spec.chartType);
+      seriesLegend(container, sVals, spec.seriesDims, spec.style, spec.chartType,
+      { colourFor: legendColourFor(spec) });
       metricLegend(container, spec);
     }
   }
@@ -116,7 +117,8 @@ function renderLineLeaf(container, spec) {
   scrollWrap(container, svg, w, h, spec);
   axisNotes(container, sc, all);
   if (spec.showLegend !== false) {
-    seriesLegend(container, sVals, spec.seriesDims, spec.style, spec.chartType);
+    seriesLegend(container, sVals, spec.seriesDims, spec.style, spec.chartType,
+      { colourFor: legendColourFor(spec) });
     metricLegend(container, spec);
   }
 }
@@ -129,6 +131,20 @@ function metricColourFor(spec) {
   if (!spec || spec.colourBy !== 'metric' || !spec.metricKeyAt) return null;
   const palette = (spec.style && spec.style.palette) || 'default';
   return (sv, xv) => metricColorOf(palette, spec.metricKeyAt(sv, xv)) || sv.color;
+}
+
+// What the KEY should be painted, which is not always what the series entry
+// carries. Where the metric is one of the series dimensions each series really
+// does have one colour -- the metric's -- and the key must use it, or the key
+// shows the series palette while the chart shows the metric palette. Where the
+// metric varies inside a series there is no one colour, and null says so.
+function legendColourFor(spec) {
+  if (!spec || spec.colourBy !== 'metric') return null;
+  const palette = (spec.style && spec.style.palette) || 'default';
+  return sv => {
+    const mk = sv.vals && sv.vals[MEASURE_DIM];
+    return mk ? metricColorOf(palette, mk) : null;
+  };
 }
 
 // The key for those colours. Only where the series legend is not already saying
@@ -148,7 +164,7 @@ function metricLegend(container, spec) {
   keys.forEach(mk => {
     const item = html('div', 'item', legend);
     html('span', 'swatch', item).style.background = metricColorOf(palette, mk);
-    html('span', null, item).textContent = METRIC_BY_KEY[mk] ? METRIC_BY_KEY[mk].label : mk;
+    html('span', 'legend-text', item).textContent = METRIC_BY_KEY[mk] ? METRIC_BY_KEY[mk].label : mk;
   });
 }
 
@@ -336,11 +352,32 @@ function renderDualAxisLeaf(container, spec, asLines) {
 
 function renderBarLeafDiverging(container, spec) {
   const sVals = spec.series, xVals = spec.x, getValue = spec.getValue;
-  const unit = spec.kind ? spec.kind.unit : '';
   const xDims = spec.xDims || [];
+  // A diverging chart's value axis runs across the page, so a second scale is a
+  // second tick row rather than a second side. Same bargain as the vertical
+  // one: compact, and lengths mean nothing across the two.
+  const dual = !!spec.dualAxis;
+  const kindOf = sv => {
+    const mk = sv.vals && sv.vals[MEASURE_DIM];
+    return (mk && METRIC_BY_KEY[mk]) ? METRIC_BY_KEY[mk].format : spec.kind;
+  };
+  const axisGroups = [];
+  if (dual) {
+    sVals.forEach(sv => {
+      const f = kindOf(sv);
+      let g = axisGroups.find(x => sameAxis(x.fmt, f));
+      if (!g) { g = { fmt: f, list: [] }; axisGroups.push(g); }
+      g.list.push(sv);
+    });
+  }
+  const fmtA = (dual && axisGroups[0]) ? axisGroups[0].fmt : spec.kind;
+  const fmtB = (dual && axisGroups[1]) ? axisGroups[1].fmt : null;
+  const onB = sv => !!(fmtB && axisGroups[1].list.indexOf(sv) !== -1);
+  const unplaced = dual ? axisGroups.slice(2) : [];
+
   const rowH = Math.max(22, sVals.length * 11 + 8);
   const plotW = 420;
-  const marginL = 168, marginR = 54, marginT = 8, marginB = 22;
+  const marginL = 168, marginR = 54, marginT = fmtB ? 26 : 8, marginB = 22;
   const cx0 = plotW / 2;
 
   // Same nested grouping as the vertical charts, laid out down the page: every outer
@@ -370,24 +407,38 @@ function renderBarLeafDiverging(container, spec) {
   const plotH = cy;
   const w = plotW + marginL + marginR, h = plotH + marginT + marginB;
 
-  let maxAbs = 0;
+  const maxAbs = [0, 0];
   xVals.forEach(xv => sVals.forEach(sv => {
     const val = getValue(sv, xv);
-    if (val !== null && val !== undefined) maxAbs = Math.max(maxAbs, Math.abs(val));
+    if (val !== null && val !== undefined) {
+      const s = onB(sv) ? 1 : 0;
+      maxAbs[s] = Math.max(maxAbs[s], Math.abs(val));
+    }
   }));
   const niceSteps = [2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 80, 100, 150, 200, 300, 400, 500, 800, 1000];
-  const domainMax = niceSteps.find(s => s >= maxAbs * 1.15) || Math.ceil((maxAbs * 1.15) / 100) * 100 || 10;
-  function xPos(delta) { return cx0 + (delta / domainMax) * cx0; }
+  const niceMax = m => niceSteps.find(s => s >= m * 1.15) || Math.ceil((m * 1.15) / 100) * 100 || 10;
+  const domainMax = [niceMax(maxAbs[0]), niceMax(maxAbs[1])];
+  function xPosOn(delta, s) { return cx0 + (delta / domainMax[s]) * cx0; }
+  function xPos(delta) { return xPosOn(delta, 0); }
 
   const svg = el('svg', { viewBox: '0 0 ' + w + ' ' + h });
   const plotG = el('g', { transform: 'translate(' + marginL + ',' + marginT + ')' }, svg);
 
-  [-domainMax, -domainMax / 2, 0, domainMax / 2, domainMax].forEach(t => {
-    const tx = xPos(t);
-    el('line', { class: t === 0 ? 'baseline' : 'grid-line', x1: tx, x2: tx, y1: 0, y2: plotH }, plotG);
-    el('text', { class: 'axis-label', x: tx, y: plotH + 14, 'text-anchor': 'middle' }, plotG)
-      .textContent = (t > 0 ? '+' : '') + Math.round(t) + unit;
-  });
+  // Zero is the one place the two scales agree, so it is drawn once and both
+  // sets of ticks hang off it.
+  const divTick = (fmt, t) => (t > 0 ? '+' : '') + Math.round(t) + (fmt ? fmt.unit : '');
+  const tickRow = (s, fmt, y, cls) => {
+    [-domainMax[s], -domainMax[s] / 2, 0, domainMax[s] / 2, domainMax[s]].forEach(t => {
+      const tx = xPosOn(t, s);
+      if (s === 0) {
+        el('line', { class: t === 0 ? 'baseline' : 'grid-line', x1: tx, x2: tx, y1: 0, y2: plotH }, plotG);
+      }
+      el('text', { class: cls, x: tx, y: y, 'text-anchor': 'middle' }, plotG)
+        .textContent = divTick(fmt, t);
+    });
+  };
+  tickRow(0, fmtA, plotH + 14, 'axis-label');
+  if (fmtB) tickRow(1, fmtB, -10, 'axis-label axis-secondary');
 
   headers.forEach(hd => {
     el('text', {
@@ -398,6 +449,7 @@ function renderBarLeafDiverging(container, spec) {
   });
 
   const multiSeries = sVals.length > 1;
+  const colourFor = metricColourFor(spec);
   const barH = Math.max(1, Math.min(12, Math.floor((rowH - 6) / sVals.length)));
   xVals.forEach((xv, ri) => {
     const rowY0 = rowTop[ri];
@@ -406,38 +458,82 @@ function renderBarLeafDiverging(container, spec) {
     sVals.forEach((sv, si) => {
       const val = getValue(sv, xv);
       if (val === null || val === undefined) return;
+      const s = onB(sv) ? 1 : 0;
       const barY = rowY0 + 3 + si * (barH + 2);
       const good = val >= 0;
-      const bx = Math.min(xPos(0), xPos(val)), bw = Math.max(Math.abs(xPos(val) - xPos(0)), 1);
+      const bx = Math.min(xPosOn(0, s), xPosOn(val, s));
+      const bw = Math.max(Math.abs(xPosOn(val, s) - xPosOn(0, s)), 1);
       // With several series the bars must be told apart by series (metric, Device, ...);
       // the sign is still unambiguous because the bar grows left or right of zero.
       // With a single series nothing needs distinguishing, so colour carries polarity.
-      const fill = multiSeries ? sv.color : (good ? 'var(--div-pos-2)' : 'var(--div-neg-2)');
-      const rect = el('rect', {
+      const fill = (multiSeries || dual) ? (colourFor ? colourFor(sv, xv) : sv.color)
+        : (good ? 'var(--div-pos-2)' : 'var(--div-neg-2)');
+      const attrs = {
         class: 'bar', x: bx, y: barY, width: bw, height: barH, rx: 2,
         fill: fill
-      }, plotG);
+      };
+      // The second scale's bars are outlined rather than solid, the way the
+      // vertical dual axis dashes its lines: a reader must never compare a
+      // length on one scale with a length on the other by eye.
+      if (s === 1) {
+        attrs.class = 'bar bar-secondary';
+        attrs['fill-opacity'] = 0.45;
+        attrs.stroke = fill;
+        attrs['stroke-dasharray'] = '3 2';
+      }
+      const rect = el('rect', attrs, plotG);
       rect.addEventListener('mousemove', e => showTip(e, [
         xv.label + (sVals.length > 1 ? ' — ' + sv.label : ''),
-        formatValue(spec.kind, val)
+        formatValue(dual ? kindOf(sv) : spec.kind, val)
       ]));
       rect.addEventListener('mouseleave', hideTip);
     });
   });
 
   scrollWrap(container, svg, w, h, spec);
+  if (unplaced.length) {
+    html('div', 'chart-note', container).textContent =
+      'A frame has two value axes, and these measures need ' + axisGroups.length + ': '
+      + unplaced.map(g => axisLabelOf(g.fmt)).join(', ')
+      + ' could not be drawn. Turn the second axis off to get a chart per scale instead.';
+  }
 
   if (spec.showLegend === false) return;
+  if (fmtB) {
+    const legend = html('div', 'legend axis-legend', container);
+    const paint = legendColourFor(spec);
+    const cluster = (title, list, second) => {
+      if (!list.length) return;
+      const g = html('div', 'legend-group' + (second ? ' right' : ''), legend);
+      html('span', 'legend-cap', g).textContent = title;
+      list.forEach(sv => {
+        const item = html('div', 'item', g);
+        const c = paint ? paint(sv) : sv.color;
+        html('span', 'swatch' + (second ? ' dashed' : ''), item).style.background = c || 'var(--text-muted)';
+        html('span', 'legend-text', item).textContent = sv.label;
+      });
+    };
+    cluster('Lower axis · ' + axisLabelOf(fmtA), axisGroups[0].list, false);
+    cluster('Upper axis · ' + axisLabelOf(fmtB) + ' (outlined)', axisGroups[1].list, true);
+    html('div', 'legend-note', legend).textContent =
+      'Two scales in one frame — bars right of zero improved, left regressed, but a '
+      + 'length on one axis says nothing about a length on the other.';
+    metricLegend(container, spec);
+    return;
+  }
   const legend = html('div', 'legend', container);
   if (multiSeries) {
+    const paint = legendColourFor(spec);
     sVals.forEach(sv => {
       const item = html('div', 'item', legend);
-      html('span', 'swatch', item).style.background = sv.color;
-      html('span', null, item).textContent = sv.label;
+      const c = paint ? paint(sv) : sv.color;
+      html('span', 'swatch', item).style.background = c || 'var(--text-muted)';
+      html('span', 'legend-text', item).textContent = sv.label;
     });
     const note = html('div', 'item', legend);
     note.style.color = 'var(--text-muted)';
     note.textContent = 'bars right of zero improved, left regressed';
+    metricLegend(container, spec);
   } else {
     const posItem = html('div', 'item', legend);
     html('span', 'swatch', posItem).style.background = 'var(--div-pos-2)';
