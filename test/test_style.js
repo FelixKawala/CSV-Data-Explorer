@@ -18,6 +18,20 @@ const set = (w, d, cls, v) => { const e = ctl(d, cls); e.value = v; e.dispatchEv
 const marks = d => Array.from(d.querySelectorAll('#plots .series-dot'));
 const shapes = d => Array.from(new Set(marks(d).map(m => m.getAttribute('data-shape'))));
 const bars = d => Array.from(d.querySelectorAll('#plots rect.bar'));
+const shown = d => d.querySelectorAll('#plots .data-shown-block .dual-col');
+const addMeasure = (d, p) => Array.from(shown(d)[1].querySelectorAll('.dnd-chip'))
+  .find(c => c.textContent.indexOf(p) !== -1).querySelector('button').click();
+const rmMeasure = (d, p) => Array.from(shown(d)[0].querySelectorAll('.dnd-chip'))
+  .find(c => c.textContent.indexOf(p) !== -1).querySelector('button').click();
+const toggle = (w, d, text) => {
+  const lab = Array.from(d.querySelectorAll('#plots .head-toggle')).find(l => l.textContent.indexOf(text) !== -1);
+  if (!lab) return false;
+  const cb = lab.querySelector('input');
+  cb.checked = !cb.checked;
+  cb.dispatchEvent(new w.Event('change'));
+  return true;
+};
+const values = d => Array.from(d.querySelectorAll('#plots text.bar-value'));
 
 console.log('\n=== 1. A line series is told apart by shape as well as colour ===');
 {
@@ -220,6 +234,69 @@ console.log('\n=== 8. Style survives a save, and a bad one does not reach the ch
      'and nonsense in a stored style is replaced rather than drawn',
      w.eval('JSON.stringify(plots[0].style)'));
   ok(d.querySelectorAll('#plots rect.bar').length > 0, 'the chart still draws');
+  w.close();
+}
+
+console.log('\n=== 9. A second axis does not put the chart outside the style block ===');
+{
+  const { w, d } = boot();
+  addMeasure(d, 'Count A');
+  ok(toggle(w, d, 'second y-axis'), 'the second axis is on');
+  ok(d.querySelectorAll('#plots text.axis-right').length > 0, 'and drawn');
+  openStyle(d);
+
+  ok(Number(bars(d)[0].getAttribute('rx')) > 0, 'its bars start rounded like any other',
+     bars(d)[0].getAttribute('rx'));
+  set(w, d, 'style-corner', 'square');
+  ok(bars(d).every(b => Number(b.getAttribute('rx')) === 0), 'and square when asked',
+     bars(d)[0].getAttribute('rx'));
+
+  set(w, d, 'style-pattern', 'auto');
+  const tex = d.querySelectorAll('#plots .bar-texture');
+  ok(tex.length === bars(d).length, 'a texture over every bar on the left axis',
+     tex.length + '/' + bars(d).length);
+  ok(d.querySelectorAll('#plots .axis-legend .swatch-svg pattern').length > 0,
+     'and the axis legend shows it, rather than a plain colour square');
+
+  const vl = ctl(d, 'style-value-labels');
+  vl.checked = true; vl.dispatchEvent(new w.Event('change'));
+  ok(values(d).length === bars(d).length, 'the numbers go on the bars', values(d).length);
+  ok(values(d).every(t => /\d/.test(t.textContent) && !/NaN|undefined/.test(t.textContent)),
+     'each reading as a number', values(d)[0].textContent);
+
+  set(w, d, 'style-palette', 'okabe');
+  ok(bars(d).some(b => b.getAttribute('fill') === '#0072B2'), 'and the palette still reaches it',
+     bars(d)[0].getAttribute('fill'));
+  w.close();
+}
+
+console.log('\n=== 10. The horizontal chart is inside it as well ===');
+{
+  const { w, d } = boot();
+  setType(w, d, 'diverging');
+  rmMeasure(d, 'Rate A');
+  addMeasure(d, 'Δ Rate A (Tuned−Base)');
+  addMeasure(d, 'Δ Count A (Tuned vs Base)');
+  ok(toggle(w, d, 'second'), 'a diverging chart takes a second scale too');
+  ok(d.querySelectorAll('#plots rect.bar-secondary').length > 0, 'and puts bars on it');
+  openStyle(d);
+
+  set(w, d, 'style-corner', 'square');
+  ok(bars(d).every(b => Number(b.getAttribute('rx')) === 0), 'square corners reach the horizontal bars',
+     bars(d)[0].getAttribute('rx'));
+  set(w, d, 'style-pattern', 'auto');
+  ok(d.querySelectorAll('#plots .bar-texture').length === bars(d).length, 'as do textures',
+     d.querySelectorAll('#plots .bar-texture').length + '/' + bars(d).length);
+
+  const vl = ctl(d, 'style-value-labels');
+  vl.checked = true; vl.dispatchEvent(new w.Event('change'));
+  const vals = values(d);
+  ok(vals.length === bars(d).length, 'and the numbers', vals.length);
+  ok(vals.every(t => isFinite(parseFloat(t.getAttribute('x'))) && isFinite(parseFloat(t.getAttribute('y')))),
+     'each placed at a real coordinate');
+  ok(vals.some(t => t.getAttribute('text-anchor') === 'start')
+     && vals.some(t => t.getAttribute('text-anchor') === 'end'),
+     'written off the end the bar grew towards, so it is never over its neighbour');
   w.close();
 }
 

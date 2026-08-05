@@ -1,4 +1,40 @@
 // bar / line / dual-axis / diverging / table / matrix renderers
+
+// One bar, drawn the way the Style block says a bar is drawn. Every leaf that
+// draws bars goes through here: the dual-axis and the diverging leaves each had
+// a <rect> of their own and so ignored the corner, the texture and the value
+// label entirely. The panel went on offering all three -- it is offered for
+// whatever chart draws bars -- and nothing happened, which reads as the style
+// options being broken rather than as this chart never having been wired to
+// them.
+//
+// `thickness` is the bar's narrow side and `length` its long one, whichever way
+// round the chart lays them out: the corner radius is a statement about the
+// narrow side, and a horizontal bar has it in `height`.
+function drawStyledBar(svg, plotG, box, opts) {
+  const rx = barCornerRadius(opts.corner, opts.thickness, opts.length);
+  const rect = el('rect', Object.assign(
+    { class: 'bar', fill: opts.fill, rx: rx }, box, opts.attrs || {}), plotG);
+  // texture as a second rect over the solid colour, so `fill` stays a plain
+  // paint for anything that cannot resolve a url(#id)
+  const tex = patternFill(svg, opts.pattern, 'var(--text-primary)');
+  if (tex) {
+    el('rect', Object.assign({}, box, {
+      class: 'bar-texture', 'data-pattern': opts.pattern, rx: rx,
+      fill: tex, opacity: 0.5, 'pointer-events': 'none',
+    }), plotG);
+  }
+  // The number on the bar. When measures of different size share a frame the
+  // small one is a sliver, and the label is the only way to read it at all.
+  if (opts.label) {
+    el('text', {
+      class: 'bar-value', x: opts.label.x, y: opts.label.y,
+      'text-anchor': opts.label.anchor || 'middle',
+    }, plotG).textContent = opts.label.text;
+  }
+  return rect;
+}
+
 // ---- bar chart leaf ----
 function renderBarLeaf(container, spec) {
   const sVals = spec.series, xVals = spec.x, xDims = spec.xDims;
@@ -34,31 +70,17 @@ function renderBarLeaf(container, spec) {
       const barH = Math.max(Math.abs(barY - sc.zeroY), 1);
       const fill = signColoured ? (val >= 0 ? 'var(--div-pos-2)' : 'var(--div-neg-2)')
         : (colourFor ? colourFor(sv, xv) : sv.color);
-      const rx = barCornerRadius(style.barCorner, lay.unitW, barH);
-      const rect = el('rect', {
-        class: 'bar', fill: fill,
-        x: bx, y: barTop,
-        width: lay.unitW, height: barH, rx: rx
-      }, plotG);
-      // texture as a second rect over the solid colour, so `fill` stays a plain
-      // paint for anything that cannot resolve a url(#id)
-      // The number on the bar. When measures of different size share a frame the
-      // small one is a sliver, and the label is the only way to read it at all.
-      if (style.valueLabels) {
-        const t = el('text', {
-          class: 'bar-value', x: bx + lay.unitW / 2, y: Math.max(barTop - 3, 8),
-          'text-anchor': 'middle',
-        }, plotG);
-        t.textContent = formatValue(kind, val);
-      }
-      const tex = signColoured ? null : patternFill(svg, sv.pattern, 'var(--text-primary)');
-      if (tex) {
-        el('rect', {
-          class: 'bar-texture', 'data-pattern': sv.pattern,
-          x: bx, y: barTop, width: lay.unitW, height: barH, rx: rx,
-          fill: tex, opacity: 0.5, 'pointer-events': 'none',
-        }, plotG);
-      }
+      const rect = drawStyledBar(svg, plotG,
+        { x: bx, y: barTop, width: lay.unitW, height: barH },
+        {
+          fill: fill, corner: style.barCorner, thickness: lay.unitW, length: barH,
+          // polarity is what the colour is saying here; a texture on top of it
+          // would be a second distinction with nothing to distinguish
+          pattern: signColoured ? null : sv.pattern,
+          label: style.valueLabels
+            ? { x: bx + lay.unitW / 2, y: Math.max(barTop - 3, 8), text: formatValue(kind, val) }
+            : null,
+        });
       rect.addEventListener('mousemove', e => showTip(e, [
         xv.label + (sVals.length > 1 ? ' — ' + sv.label : ''), formatValue(kind, val)
       ]));
@@ -300,10 +322,17 @@ function renderDualAxisLeaf(container, spec, asLines) {
         const bx = lay.gxs[gi] + vi * (lay.unitW + lay.gap);
         const barY = scL.y(val);
         const barTop = Math.min(barY, scL.zeroY);
-        const rect = el('rect', {
-          class: 'bar', fill: colourFor ? colourFor(sv, xv) : sv.color, x: bx, y: barTop,
-          width: lay.unitW, height: Math.max(Math.abs(barY - scL.zeroY), 1), rx: Math.min(3, lay.unitW / 2)
-        }, plotG);
+        const barH = Math.max(Math.abs(barY - scL.zeroY), 1);
+        const rect = drawStyledBar(svg, plotG,
+          { x: bx, y: barTop, width: lay.unitW, height: barH },
+          {
+            fill: colourFor ? colourFor(sv, xv) : sv.color,
+            corner: style.barCorner, thickness: lay.unitW, length: barH,
+            pattern: sv.pattern,
+            label: style.valueLabels
+              ? { x: bx + lay.unitW / 2, y: Math.max(barTop - 3, 8), text: formatValue(kindOf(sv), val) }
+              : null,
+          });
         rect.addEventListener('mousemove', e => showTip(e, [
           xv.label + ' — ' + sv.label, formatValue(kindOf(sv), val)
         ]));
@@ -337,6 +366,9 @@ function renderDualAxisLeaf(container, spec, asLines) {
 
   if (spec.showLegend !== false) {
     const legend = html('div', 'legend axis-legend', container);
+    // Colouring by metric repaints every mark, here as anywhere else; a key
+    // still showing the series palette would be a key to another chart.
+    const paint = legendColourFor(spec);
     const cluster = (title, list, right) => {
       if (list.length === 0) return;
       const g = html('div', 'legend-group' + (right ? ' right' : ''), legend);
@@ -347,10 +379,11 @@ function renderDualAxisLeaf(container, spec, asLines) {
       const mode = legendMode(list, style, (right || asLines) ? 'lines' : spec.chartType);
       list.forEach(sv => {
         const item = html('div', 'item', g);
+        const c = (paint ? paint(sv) : sv.color) || 'var(--text-muted)';
         if (mode === 'flat' && right) {
-          html('span', 'swatch dashed', item).style.background = sv.color;
+          html('span', 'swatch dashed', item).style.background = c;
         } else {
-          legendGlyph(item, sv, mode);
+          legendGlyph(item, sv, mode, c);
         }
         html('span', null, item).textContent = sv.label;
       });
@@ -359,6 +392,7 @@ function renderDualAxisLeaf(container, spec, asLines) {
     cluster('Right axis · ' + axisLabelOf(secondaryKind) + ' (dashed)', secondary, true);
     html('div', 'legend-note', legend).textContent =
       'Two scales in one frame — heights are not comparable across axes, and where the series cross means nothing.';
+    metricLegend(container, spec);
   }
 }
 
@@ -369,6 +403,7 @@ function renderBarLeafDiverging(container, spec) {
   // second tick row rather than a second side. Same bargain as the vertical
   // one: compact, and lengths mean nothing across the two.
   const dual = !!spec.dualAxis;
+  const style = spec.style || defaultPlotStyle();
   const kindOf = sv => {
     const mk = sv.vals && sv.vals[MEASURE_DIM];
     return (mk && METRIC_BY_KEY[mk]) ? METRIC_BY_KEY[mk].format : spec.kind;
@@ -478,12 +513,10 @@ function renderBarLeafDiverging(container, spec) {
       // With several series the bars must be told apart by series (metric, Device, ...);
       // the sign is still unambiguous because the bar grows left or right of zero.
       // With a single series nothing needs distinguishing, so colour carries polarity.
-      const fill = (multiSeries || dual) ? (colourFor ? colourFor(sv, xv) : sv.color)
-        : (good ? 'var(--div-pos-2)' : 'var(--div-neg-2)');
-      const attrs = {
-        class: 'bar', x: bx, y: barY, width: bw, height: barH, rx: 2,
-        fill: fill
-      };
+      const signColoured = !multiSeries && !dual;
+      const fill = signColoured ? (good ? 'var(--div-pos-2)' : 'var(--div-neg-2)')
+        : (colourFor ? colourFor(sv, xv) : sv.color);
+      const attrs = {};
       // The second scale's bars are outlined rather than solid, the way the
       // vertical dual axis dashes its lines: a reader must never compare a
       // length on one scale with a length on the other by eye.
@@ -493,7 +526,20 @@ function renderBarLeafDiverging(container, spec) {
         attrs.stroke = fill;
         attrs['stroke-dasharray'] = '3 2';
       }
-      const rect = el('rect', attrs, plotG);
+      const rect = drawStyledBar(svg, plotG,
+        { x: bx, y: barY, width: bw, height: barH },
+        {
+          fill: fill, corner: style.barCorner, thickness: barH, length: bw,
+          pattern: signColoured ? null : sv.pattern,
+          // outside the end of the bar, on the side it grew towards, so a short
+          // bar's number is not written over the bar next to it
+          label: style.valueLabels ? {
+            x: good ? bx + bw + 3 : bx - 3, y: barY + barH / 2 + 3,
+            anchor: good ? 'start' : 'end',
+            text: formatValue(dual ? kindOf(sv) : spec.kind, val),
+          } : null,
+          attrs: attrs,
+        });
       rect.addEventListener('mousemove', e => showTip(e, [
         xv.label + (sVals.length > 1 ? ' — ' + sv.label : ''),
         formatValue(dual ? kindOf(sv) : spec.kind, val)
@@ -518,10 +564,17 @@ function renderBarLeafDiverging(container, spec) {
       if (!list.length) return;
       const g = html('div', 'legend-group' + (second ? ' right' : ''), legend);
       html('span', 'legend-cap', g).textContent = title;
+      // Same builder as everywhere else, so a texture set per series shows in
+      // the key rather than the key claiming colour is the whole difference.
+      const mode = legendMode(list, style, 'bars');
       list.forEach(sv => {
         const item = html('div', 'item', g);
         const c = paint ? paint(sv) : sv.color;
-        html('span', 'swatch' + (second ? ' dashed' : ''), item).style.background = c || 'var(--text-muted)';
+        if (mode === 'flat') {
+          html('span', 'swatch' + (second ? ' dashed' : ''), item).style.background = c || 'var(--text-muted)';
+        } else {
+          legendGlyph(item, sv, mode, c || 'var(--text-muted)');
+        }
         html('span', 'legend-text', item).textContent = sv.label;
       });
     };
@@ -536,10 +589,11 @@ function renderBarLeafDiverging(container, spec) {
   const legend = html('div', 'legend', container);
   if (multiSeries) {
     const paint = legendColourFor(spec);
+    const mode = legendMode(sVals, style, 'bars');
     sVals.forEach(sv => {
       const item = html('div', 'item', legend);
       const c = paint ? paint(sv) : sv.color;
-      html('span', 'swatch', item).style.background = c || 'var(--text-muted)';
+      legendGlyph(item, sv, mode, c || 'var(--text-muted)');
       html('span', 'legend-text', item).textContent = sv.label;
     });
     const note = html('div', 'item', legend);
