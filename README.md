@@ -36,13 +36,36 @@ something to show.
 
 One row per observation. Each column is a **dimension** (something to group by)
 or a **measure** (a number to plot); the import proposes a role and a format for
-each and shows you the guess rather than applying it silently. You can rename
+each and shows you the guess rather than applying it silently. A column that is
+empty in every row is proposed as **Ignore** and says so — a trailing comma on
+every line makes one of those, and left as a dimension it would take a zone and
+a chip with nothing written on it. You can rename
 any column for display, and it tells you before committing how many rows will
-collapse onto how many combinations.
+collapse onto how many combinations. None of it is a decision you are stuck
+with: **Edit import** on the stored dataset opens this same screen again.
 
 Several files at once become either one dataset per file, or — when the headers
 match — a single dataset with a `Source` dimension naming each file. **Import
 folder…** takes a whole tree.
+
+### Selecting what comes in
+
+Before any column is profiled, the review can be told which rows and columns of
+a file to read at all. Everything is selected by default and the control is
+folded away, so an import that never touches it is the import it always was.
+Expanded, a grid shows the file as it was read: drag across the row numbers to
+take a band of rows out, drag across the column headers for columns — dragging
+out of what is still selected removes it, dragging out of what is missing puts
+it back — and **Select all / Unselect all** resets either direction in one go.
+Only the rows in view are drawn, so a hundred-thousand-row file costs the same
+as a hundred-row one.
+
+What is left selected is what everything below reads: the profiles, the counts
+and the emitted rows are all derived from it, and the recipe stores the
+selection so **Edit import** reopens with the same bands out and the dataset is
+rebuilt from exactly the rows and columns that were chosen. The panel also
+downloads the selected rows as a CSV, for the "trim the file first" workflow
+done here instead of in a spreadsheet.
 
 Files whose columns *don't* match can be combined too, as **one dataset anyway**:
 it is not the default, and it asks what a file that has not got a column should
@@ -55,9 +78,31 @@ column falls outside the declared domain and is dropped whole.
 ### Stored datasets
 
 Every import is kept as its raw text plus its recipe, listed on the Data tab.
-A dataset can be **renamed** there — click the name — since it arrives called
-after the file it came from, which says where the bytes are from and nothing
-about what they are.
+A dataset can be **renamed** there — click the name — or named in the review
+before it is stored, since it otherwise arrives called after the file it came
+from, which says where the bytes are from and nothing about what they are.
+
+Each card says when it was imported, and **Where from** opens the files behind
+it: their names, the paths they came from — which is what tells six files called
+`results.csv` apart — their sizes, and a line per reshape the recipe applied.
+For a combined dataset, that is listed per part.
+
+**Edit import** puts the review screen back up over the same bytes, with every
+switch where it was left: rename a column, change a measure into a dimension or
+back, drop one, or redo a split that came out wrong. It is not a re-import — the
+same record is rewritten, keeping its id, the date it arrived and the comparison
+and calculated measures defined on it, so the plots built on it stay built on it.
+Anything that stops making sense is said out loud rather than silently dropped:
+a formula whose measure has just become a dimension is named as it goes, and the
+open plots are repaired the way a saved view is, losing only the zones and
+measures that no longer exist.
+
+A dataset stored before this existed carries no record of that screen, so its
+recipe is read back into one. That reconstruction is careful about the half a
+recipe cannot state: a pattern field left out, a part put aside and an ignored
+folder level are all simply absent from it, and each stays out rather than being
+proposed again. Combined datasets are the exception — each part has its own
+recipe, so they are edited as parts and combined again.
 
 Tick two or more and **Combine** merges them into one new dataset, keeping the
 originals. Each part keeps its own recipe, which is what makes this possible at
@@ -69,11 +114,39 @@ rows that agree on every other dimension would be averaged together. Combining
 something already combined flattens rather than nests. Comparison and calculated
 measures defined on the parts come along.
 
+### Several datasets on one page
+
+**Open** shows a dataset on the builder, as it always has: the plots on the page
+read it. **Add a plot from this** does the other thing — it adds one plot that
+reads *that* dataset and leaves everything already on the page alone. Press it
+on a second dataset and you have two charts from two experiments side by side,
+each grouped by its own dimensions, each with its own measures in its own "Data
+shown" list, each exporting its own figure and its own source files.
+
+A plot that has been pinned this way says so in a select beside its chart type,
+where it can be pointed at any loaded dataset or set back to **follow the page
+dataset** — the default, and what every plot does until told otherwise. Pointing
+a plot at other data is not a reset: it goes through the same repair a saved
+view goes through, so a dimension both datasets have keeps its zone and its
+filters. It is undoable, like a drag between zones.
+
+Because pinning is opt-in, nothing else changes. A view saved from a page of
+ordinary plots is byte-for-byte what it was, and still loads onto whatever
+dataset happens to be open — which is how views are meant to be used. A view
+that *does* hold pinned plots records which dataset each one read, and loading
+it fetches those datasets back. A plot whose dataset has since been deleted
+falls back to the page's and says so on its own card rather than disappearing or
+taking the page down with it.
+
+Note that colours are decided per dataset: two datasets whose first measure is a
+different thing will still draw it in the first colour. Per-series overrides in
+the style panel are the way to make two charts agree.
+
 ### When the CSV is not tidy
 
-Dimensions often live outside the rows: in the column names, or in the folders
-the files came from. Both can be pulled out at import, by a pattern you write
-and can see the effect of before committing.
+Dimensions often live outside the rows: in the column names, inside the labels of
+one column, or in the folders the files came from. All three can be pulled out at
+import, by a pattern you write and can see the effect of before committing.
 
     app,2080c512,2080c512kbk,2080c512kbki,2080c256,…      33 value columns
 
@@ -93,12 +166,74 @@ splits a percentage column from a count column in the same file.
 
 Name a field `{measure}` and its text picks the measure rather than a dimension,
 so `ratio{measure}` gives you `L1` and `L2` as two measures with their own
-formats. Otherwise everything melts into one measure you name.
+formats. Otherwise everything melts into one measure you name — `Value` unless
+you name it something else, and a level or a dimension that is *itself* called
+`value` keeps that name while the unnamed measure moves aside.
 
 The preview lists every column name and **what each one parsed into**, including
 the ones that did not match — those stay ordinary columns. It shows values rather
 than a tick because a pattern can match and still be wrong: `{variant}` will
 happily swallow `kbkMemAcc` whole.
+
+A row label is compound as often as a header label is, and **a column's values**
+take the same treatment: tick *A column's values carry dimensions*, choose the
+column, and write a pattern against its distinct values.
+
+    block-config,l1hitrate,l2hitrate          16x4, 16x8, 32x8, …
+    split by   {bx:d}x{by:d}
+
+The column is replaced by its parts, since they tell the rows apart on their own;
+tick *keep it as a dimension too* to have both. A value the pattern does **not**
+match keeps its whole text under the first field rather than emptying every one
+of them — two labels that differ stay two rows, where blanking them would fold
+every leftover onto one tuple and average it. One column is offered at a time,
+because a compound label is one column's habit — usually the first.
+
+#### When the label is a set of flags rather than a sequence
+
+A pattern reads a label by *position*, and some labels are not written that way:
+they are a base name with flags stuck on it, in whatever number and order the run
+happened to have.
+
+    posterization-atomic_manual_prefetch_s2000/cu_mode_no_barriers
+
+There is no positional pattern for that — `manual` is missing from half the
+labels and `s2000` is a value where `prefetch` is a yes/no. Switch the dialect to
+**Parts (separators)** and every separator cuts the label instead:
+
+    separators  _/     72 values → 10 parts → 6 dimensions
+
+Two proposals are made, and both are shown as the control that undoes them:
+
+* Parts **never seen apart** are one part again. `cu` and `mode` always travel
+  together, so they are `cu_mode` — which is what they were before the separator
+  cut them in half.
+* Parts **never seen together** are one dimension, because that is what mutually
+  exclusive means: `s2000` and `s5000` are two sleeps, not two independent flags.
+  Everything else is a flag of its own, with values `prefetch` and `no prefetch`
+  — a flag says its own name rather than "yes", because a legend, an axis band
+  and an exported column all print the value, and three flags on one chart
+  printing yes, yes, no say nothing about which flag was which.
+
+A part in every label is left out, since it distinguishes nothing. Each row of the
+table can be moved into another dimension, pulled out into one of its own, or
+ignored, and the resulting dimensions are renamed in the column table like any
+other. What is stored is the grouping you settled on, not the rule that proposed
+it — so adding a run later cannot silently regroup a dataset you have already
+drawn from.
+
+This is the reading that answers "which combination actually helps": with
+`prefetch` and `manual` as their own yes/no dimensions, prefetch on the x-axis and
+manual as the series is one chart rather than a rewrite of the labels.
+
+The **column names** take the same three readings, since a header is a label like
+any other: `avg_CPU_ExecutionTime_value` is a fixed vocabulary in a fixed order,
+and cutting it beats writing a pattern for it. One group can be told to **name
+the measure** — that is `{measure}` by another name, so `value`, `variance` and
+`standardDeviation` become three measures with their own formats while the rest
+stay dimensions. A header with no part in play is not a value column at all: that
+is what keeps `execution_name` an ordinary column, and ignoring a part is how you
+say so. A column empty in every row never joins the vocabulary.
 
 For folders, each directory level gets a row: name it, or leave it ignored. A
 level that is the same in every file starts ignored, since it distinguishes
@@ -172,6 +307,54 @@ facets, and the ones that vary get their chart per value as usual. A calculated 
 operands have it — `Δ rate × count` still varies along the compared dimension,
 through the count.
 
+## Plotting one reading against another
+
+The **Correlation plot** puts a measured quantity on *both* axes: one dot per
+combination, x its reading on one side, y its reading on the other, and a 45°
+line where the two agree. It answers "did the second run beat the first?" by
+where the dots fall rather than by reading two bars against each other.
+
+A **Pins** strip beside the chart type says what the two axes differ in:
+
+X and Y differ in  [ Variant ▾ ]   X = [ Base ▾ ]   Y = [ Tuned ▾ ]
+                        ＋ and also in …
+
+Metric is a dimension here like any other, so *X = Rate A, Y = Rate B* is the
+same control as *X = Base, Y = Tuned* — one measure against another, or one
+value of a dimension against another, or with a second row **both at once**:
+X = the target measure at Run 1, Y = the result measure at Run 2. A row with the
+same value on both sides pins that dimension for the whole chart.
+
+An axis can hold more than one reading: **＋** beside **X =** or **Y =** adds
+another value to that side, so *data0 and data1 against one baseline* is one
+chart rather than two. Each choice of one x value and one y value is its own
+series — its own colour and shape, its own row in the key and its own x/y
+column pair in the exported .csv — and an axis is still one scale: two measures
+of different kind on one side are refused rather than drawn on a scale that is
+not one. Several values on both sides combine in pairs.
+
+Everything not pinned makes the dots: the X-axis and Series zones are renamed
+**Dots** and **Dot colour**, since neither is an axis any more. A pinned
+dimension keeps its chip, marked `pinned`, and stops naming, colouring and
+splitting — the axes have consumed it, and one dot per value of it would be the
+same dot twice. The values offered are the dimension's own, not the **Shown**
+list: a pinned dimension is read at the two values named here whatever is shown.
+
+The 45° line is drawn only when both axes are the same quantity, and then both
+share one range so that 45° on screen really is `y = x`. Put a rate against a
+count and the dots are still drawn, each axis on its own scale, with no line and
+a note saying why one would mean nothing. Under every chart: how many dots fall
+above the line, below it and on it, Pearson `r` with `R²` — how well a straight
+line explains the spread — and, when the axes share a quantity, Lin's concordance
+`ρc`, which is the metric for agreement with `y = x` itself: a run that is always
+a fixed factor behind scores `r = 1` but a low `ρc`. The ±10 % band
+either side of the line can be turned off in **Style**, where **Labels** also
+names each dot with the combination it stands for.
+
+The .csv exports two columns per series — an x and a y — and the pgfplots figure
+is `only marks` against those columns, with the diagonal as `\addplot {x};` on
+`axis equal` axes.
+
 ## Leaving a dimension out
 
 A fourth zone, **Not used**, sits after X-axis, Series and Facets. A dimension
@@ -186,6 +369,11 @@ for a measure imported as one — which is the same rule the import uses when
 several rows land on one cell. The dimension keeps its **Shown / Available**
 list, and it still means something there: a value left in Available is left out
 of the average.
+
+Every dimension's list carries **all** and **none** beside its name — every
+value in or every value out in one click, where a click per chip is as many
+clicks as there are values. It is the same escape hatch the import's own
+selection has, applied to one dimension's contribution to one plot.
 
 Metric is never offered this zone. It selects a column rather than filtering
 rows, so there is nothing to average it over; it gets **Panels** instead.
@@ -239,6 +427,31 @@ second drawing only its right-hand axis and sharing the first one's x range —
 bars on the left, dashed lines with marks on the right, each axis with its own
 label and its own linear/log choice, and one legend carrying both (the
 right-hand series appear there via `\addlegendimage`).
+
+## Where the controls sit
+
+Each config block — **Data shown**, **Grouping**, **Data included** and **Style**
+— has a heading that folds it away, so a card can be cut down to the part you are
+working on. They all start open: a control that starts hidden is a control nobody
+finds.
+
+**Controls beside the chart** (Builder toolbar) puts them in a column to the left
+of the chart instead of above it, with a divider you can drag to give either side
+more room. That is the difference between changing a grouping and *watching* what
+it does. The choice and the width are remembered, since both are about the screen
+rather than about a plot; Style moves up with the other controls there, because
+the chart no longer has to be scrolled to.
+
+**Plots in a row** (Builder toolbar) flows the plot cards into a wrapping grid
+instead of one below the other, so two correlation plots sit side by side and a
+third wraps under them. It is remembered for the same reason as the controls
+beside the chart: it is a choice about the screen being read on.
+
+A single plot that **facets** can outgrow the screen the same way: **facets in
+a row** (in the plot head) draws the facet cards side by side, wrapping into
+rows, instead of one below the other. Each card keeps its caption and its own
+TikZ button, and the charts give up their fixed width to fit the card they land
+in.
 
 ## Styling a figure
 
@@ -339,15 +552,28 @@ the same thing under two names is the same button twice.
     src/js/00-core      dataset handle, DOM helpers
     src/js/05-format    how a measure is scaled, coloured and printed
     src/js/06-model     the columnar dataset and its O(#dims) lookup
+    src/js/07-color     categorical colour for a dimension value
     src/js/08-formula   the calculator: parse, unit inference, evaluate
     src/js/08-marks     marker shapes, bar textures, palettes, plot.style
     src/js/15-csv       parser and column profiling
+    src/js/15-tabs      Data / Builder tab switching, light & dark mode
     src/js/16-pattern   pulling named fields out of a column name or a path
+    src/js/17-preselect selecting which rows and columns an import reads
+    src/js/20-schema    the live schema, and reading a particular dataset
+    src/js/30-plot-spec plot spec, grouping zones, chart types, defaults
     src/js/30-store     IndexedDB, plus an in-memory store for tests
     src/js/40-import-ui the Data tab
+    src/js/40-zones-ui  drag tokens and the grouping-zone UI
+    src/js/41-edit-ui   re-opening a stored import in the same review screen
+    src/js/42-plot-dataset  which dataset a plot reads, when not the page's
     src/js/45..47       comparison, calculator and measure-editor forms
     src/js/50..65       axis planning and the chart renderers
     src/js/70..78       TikZ, CSV/pgfplots and image export
+    src/js/80-plot-card plot card and plot list, foldable config blocks
+    src/js/85-persist   autosave, named views, import/export of view configs
+    src/js/90-toolbar   builder toolbar and status line
+    src/js/99-init      boot: draw embedded data, else wait on storage
+    src/styles/         base, chart and UI stylesheets
     test/               jsdom suites + the generated fixture
     tools/              fixture generator and build
     local/              ignored; scratch space for data-specific scripts

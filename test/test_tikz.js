@@ -140,7 +140,7 @@ function texProblems(tex) {
 
   console.log('\n=== 4. Every chart type exports ===');
   {
-    for (const t of ['bars', 'lines', 'diverging', 'matrix']) {
+    for (const t of ['bars', 'lines', 'diverging', 'correlation', 'matrix']) {
       const { w, d } = boot();
       if (t === 'diverging') { rm(d, 'Rate A'); add(d, 'Δ Rate A (Tuned−Base)'); }
       setType(w, d, t);

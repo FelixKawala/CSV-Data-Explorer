@@ -31,9 +31,16 @@ function tableDataToCsv(data) {
 }
 
 // wide format: one row per x position, one column per series
+//
+// A scatter carries two numbers per series per row rather than one, so its
+// header tail widens to a pair of columns each. The body needs no branch: the
+// values are already flat and still line up with the header one for one.
 function dataToCsv(data) {
+  const cols = data.pointCols === 2
+    ? data.seriesLabels.reduce((acc, n) => acc.concat([csvName(n) + ' x', csvName(n) + ' y']), [])
+    : data.seriesLabels.map(csvName);
   const head = ['index', 'label'].concat(data.xDims.map(k => csvName(DIM_BY_KEY[k].label)))
-    .concat(data.seriesLabels.map(csvName));
+    .concat(cols);
   const lines = [head.map(csvCell).join(',')];
   data.rows.forEach((r, i) => {
     const cells = [i, csvLabel(r.label)].concat(r.parts.map(csvLabel)).concat(
@@ -72,14 +79,67 @@ function pgfSeriesOpts(data, i, colors, win, asBar) {
   return opts.filter(Boolean);
 }
 
-// ymode / ymin / ymax for one axis, from that axis's own settings.
-function pgfAxisScale(kind, ax) {
+// ymode / ymin / ymax for one axis, from that axis's own settings. `letter` is
+// there for the correlation plot, whose horizontal axis is a measured quantity
+// with a scale and bounds of its own; everything else asks about y.
+function pgfAxisScale(kind, ax, letter) {
   const a = ax || {};
+  const L = letter || 'y';
   const out = [];
   const isLog = a.scale === 'log' ? true : a.scale === 'linear' ? false : useLog(kind);
-  if (isLog) out.push('ymode=log, log basis y=10,');
-  if (a.min !== null && a.min !== undefined) out.push('ymin=' + a.min + ',');
-  if (a.max !== null && a.max !== undefined) out.push('ymax=' + a.max + ',');
+  if (isLog) out.push(L + 'mode=log, log basis ' + L + '=10,');
+  if (a.min !== null && a.min !== undefined) out.push(L + 'min=' + a.min + ',');
+  if (a.max !== null && a.max !== undefined) out.push(L + 'max=' + a.max + ',');
+  return out;
+}
+
+// A scatter reads two columns per series, not one column against the row
+// number. Emitting it as the line plot below would not be a plainer figure, it
+// would be a different and false one -- the x-axis would become the order the
+// tuples happen to sit in.
+function pgfplotsScatter(data, csvFile, caption, win, colors) {
+  const base = 2 + data.xDims.length;
+  const lo = (data.range || [0, 1])[0];
+  const hi = (data.range || [0, 1])[1];
+  const out = [];
+  if (caption) out.push('% --- ' + caption + ' ---');
+  out.push('% One mark per combination: x and y are the same measure read at the');
+  out.push('% two values the plot pins, so a mark above the diagonal is one whose');
+  out.push('% y reading is the larger.');
+  out.push('\\begin{tikzpicture}');
+  out.push('  \\begin{axis}[');
+  out.push('    width=\\linewidth, height=' + (data.diagonal ? '8cm' : '6cm') + ',');
+  // one range on both axes, so that 45 degrees on paper really is y = x
+  if (data.diagonal) out.push('    axis equal image,');
+  pgfAxisScale(data.xKind, data.xAxis, 'x').forEach(l => out.push('    ' + l));
+  pgfAxisScale(data.kind, data.yAxis, 'y').forEach(l => out.push('    ' + l));
+  out.push('    xlabel={' + latexEscape(data.xAxisLabel || '') + '},');
+  out.push('    ylabel={' + latexEscape(data.yAxisLabel || '') + '},');
+  out.push('    tick label style={font=\\scriptsize},');
+  out.push('    legend style={font=\\scriptsize, at={(0.5,-0.25)}, anchor=north, legend columns=-1},');
+  out.push('  ]');
+  data.seriesLabels.forEach((name, i) => {
+    const st = (data.seriesStyles || [])[i] || {};
+    const col = colors && win ? pgfColorName(colors, st.color, win, data.__ctx) : null;
+    // never "no marks" here, whatever the marker setting says: a scatter
+    // without marks is an empty axis
+    const opts = ['only marks', 'mark=' + (PGF_MARKS[st.shape || 'circle'] || '*')];
+    if (col) opts.push('color=' + col);
+    if (st.shape === 'triangle-down') opts.push('mark options={rotate=180}');
+    out.push('    \\addplot[' + opts.join(', ') + '] table [col sep=comma, x index='
+      + (base + 2 * i) + ', y index=' + (base + 2 * i + 1) + '] {' + csvFile + '};');
+    out.push('    \\addlegendentry{' + latexEscape(name) + '}');
+  });
+  if (data.diagonal) {
+    const dom = 'domain=' + lo + ':' + hi + ', samples=2, no marks, forget plot';
+    out.push('    \\addplot[' + dom + ', dashed, black!45] {x};');
+    if (data.band) {
+      out.push('    \\addplot[' + dom + ', dotted, black!25] {1.1*x};');
+      out.push('    \\addplot[' + dom + ', dotted, black!25] {0.9*x};');
+    }
+  }
+  out.push('  \\end{axis}');
+  out.push('\\end{tikzpicture}');
   return out;
 }
 
@@ -155,6 +215,7 @@ function pgfplotsDual(data, csvFile, caption, win, colors) {
 
 function pgfplotsFor(data, csvFile, caption, win, colors) {
   if (data.dual) return pgfplotsDual(data, csvFile, caption, win, colors);
+  if (data.scatter) return pgfplotsScatter(data, csvFile, caption, win, colors);
   const bar = data.chartType === 'bars';
   const diverging = isDiverging(data.kind);
   const ylabel = axisLabelOf(data.kind);

@@ -21,7 +21,7 @@ function makeMemoryStore() {
     async list() {
       return Array.from(datasets.values()).map(d => ({
         id: d.id, name: d.name, createdAt: d.createdAt, recipe: d.recipe, sources: d.sources,
-        parts: d.parts,
+        parts: d.parts, ui: d.ui,
       }));
     },
     async get(id) { return datasets.get(id) || null; },
@@ -92,22 +92,54 @@ function setActiveDatasetId(id) {
 // paths.
 //
 //   { name,
-//     columns:   [{source, name, label, role, format, agg, labelOverride}],
+//     columns:   [{source, name, label, role, format, agg, labelOverride,
+//                  split: null | { pattern, fields }}],           // cell values
 //     sourceDim: null | string,
 //     fill:      null | string,                                   // absent columns
 //     melt:      null | { pattern, fields, measure, measures },   // column names
 //     path:      null | { levels, pattern },                      // file paths
 //     custom:    [ ... ] }                                        // page-defined measures
 //
-// `melt` and `path` are optional and a recipe written before they existed has
-// neither. The loop below is written so that absent means "the degenerate case",
-// not "the old branch" -- there is one code path, and a tidy CSV takes it with
-// the reshape steps doing nothing.
+// `melt`, `path` and `split` are optional and a recipe written before they
+// existed has none of them. The loop below is written so that absent means "the
+// degenerate case", not "the old branch" -- there is one code path, and a tidy
+// CSV takes it with the reshape steps doing nothing.
 
 // A melt turns wide columns into rows: the pattern's fields become dimensions
 // that vary WITHIN a CSV row, and one of them may name the measure.
 function compileMeltPlan(spec) {
-  if (!spec || !spec.pattern) return null;
+  if (!spec || !(spec.pattern || spec.parts)) return null;
+  const fallback = Object.assign(
+    { value: '', key: 'value', label: 'Value', format: 'number', agg: 'mean' },
+    spec.measure || {});
+  const declared = (spec.measures || []).map(m => Object.assign(
+    { format: 'number', agg: 'mean' }, m,
+    { key: m.key || m.value, label: m.label || m.key || m.value }));
+  // The header read as a set of parts rather than as a sequence. Every group is
+  // a dimension except the one marked `measure`, which is `{measure}` by
+  // another name: its parts pick the column the number lands in.
+  if (spec.parts) {
+    const seps = spec.parts.seps === undefined ? PART_SEPS_DEFAULT : spec.parts.seps;
+    const groups = (spec.parts.groups || [])
+      .filter(g => g && g.include !== false && (g.parts || []).length)
+      .map(g => ({
+        key: g.key || g.parts[0],
+        label: g.label || g.key || g.parts[0],
+        parts: g.parts.slice(),
+        labelOverride: g.labelOverride || {},
+        measure: !!g.measure,
+      }));
+    if (!groups.length) return null;
+    const measureGroup = groups.filter(g => g.measure)[0] || null;
+    const dims = groups.filter(g => !g.measure).map(g => ({
+      field: g.key, key: g.key, label: g.label, labelOverride: g.labelOverride,
+    }));
+    return {
+      pattern: null,
+      parts: { seps: seps, groups: groups, measureGroup: measureGroup },
+      hasMeasure: !!measureGroup, dims: dims, fallback: fallback, declared: declared,
+    };
+  }
   const pattern = compilePattern(spec.pattern);
   if (!pattern.ok) return null;
   const dims = (spec.fields || [])
@@ -118,13 +150,35 @@ function compileMeltPlan(spec) {
       label: f.label || f.key || f.field,
       labelOverride: f.labelOverride || {},
     }));
-  const fallback = Object.assign(
-    { value: '', key: 'value', label: 'Value', format: 'number', agg: 'mean' },
-    spec.measure || {});
-  const declared = (spec.measures || []).map(m => Object.assign(
-    { format: 'number', agg: 'mean' }, m,
-    { key: m.key || m.value, label: m.label || m.key || m.value }));
-  return { pattern, dims, fallback, declared };
+  return { pattern, parts: null, hasMeasure: pattern.hasMeasure, dims, fallback, declared };
+}
+
+// What one header name becomes: the value of every melt dimension at it, and
+// which measure it names. Null when the melt does not claim the column at all --
+// for a pattern that is a failed match, and for parts it is a name with no part
+// in play, which is what keeps an id column out of a melt that would otherwise
+// claim every header.
+function meltReadColumn(melt, name) {
+  if (!melt.parts) {
+    const m = matchPattern(melt.pattern, name);
+    if (!m) return null;
+    return {
+      fields: m.fields,
+      measure: melt.hasMeasure ? (m.fields[PATTERN_MEASURE_FIELD] || '') : '',
+    };
+  }
+  const seps = melt.parts.seps;
+  const fields = {};
+  let claimed = false;
+  melt.parts.groups.forEach(g => {
+    const hit = g.parts.filter(p => labelHasPart(name, p, seps))[0];
+    if (hit) claimed = true;
+    if (!g.measure) fields[g.key] = partValueAt(g, name, seps);
+  });
+  if (!claimed) return null;
+  const mg = melt.parts.measureGroup;
+  const named = mg ? (mg.parts.filter(p => labelHasPart(name, p, seps))[0] || '') : '';
+  return { fields: fields, measure: named };
 }
 
 // Path fields are constant for every row of a file: the directory levels the
@@ -161,11 +215,91 @@ function compilePathPlan(spec) {
   };
 }
 
+// A column's own values can carry dimensions too: the row labels are as often
+// compound as the header labels are -- `16x4` is a block width and a height,
+// `harris-corner-tiled` an application and a variant. This is the melt's
+// counterpart for the other axis, and the same pattern language drives it.
+//
+// One plan per column that has a split, keyed by the column's index so the row
+// loop can find it without another scan.
+// Two readings, because labels are written two ways. A pattern reads one by
+// position; `parts` reads one as a set of separator-cut flags, where each part
+// becomes a dimension of its own. Both end up as a list of fields the row loop
+// fills in, so nothing downstream knows which reading produced them.
+function compileSplitPlans(cols) {
+  const plans = [];
+  (cols || []).forEach((c, ci) => {
+    const spec = c && c.split;
+    // a split on a measure column would be splitting a number: nothing to do
+    if (!spec || (c.role === 'measure')) return;
+    if (spec.parts) {
+      // Every group is declared in the recipe rather than re-derived from the
+      // data: the grouping was a proposal the user accepted or changed, and
+      // re-running the proposal on reload could quietly regroup a stored
+      // dataset the moment a value was added to it.
+      const seps = spec.parts.seps === undefined ? PART_SEPS_DEFAULT : spec.parts.seps;
+      const groups = (spec.parts.groups || [])
+        .filter(g => g && g.include !== false && (g.parts || []).length)
+        .map(g => ({
+          key: g.key || g.parts[0],
+          label: g.label || g.key || g.parts[0],
+          parts: g.parts.slice(),
+          labelOverride: g.labelOverride || {},
+        }));
+      if (!groups.length) return;
+      plans.push({ index: ci, source: c.source, seps: seps, groups: groups,
+        fields: groups.map(g => ({ key: g.key, label: g.label, labelOverride: g.labelOverride })) });
+      return;
+    }
+    if (!spec.pattern) return;
+    const pattern = compilePattern(spec.pattern);
+    if (!pattern.ok) return;
+    const fields = (spec.fields || [])
+      .filter(f => f && f.field && f.include !== false)
+      .map(f => ({
+        field: f.field,
+        key: f.key || f.field,
+        label: f.label || f.key || f.field,
+        labelOverride: f.labelOverride || {},
+      }));
+    if (!fields.length) return;
+    plans.push({ index: ci, source: c.source, pattern: pattern, fields: fields });
+  });
+  return plans;
+}
+
+// What one cell becomes. A value the pattern does not match keeps its whole
+// text under the FIRST field rather than emptying every one of them: two
+// unmatched labels that differ stay two rows, where blanking them would fold
+// every leftover onto one tuple and average it -- silently, and only for the
+// rows the pattern was worst at.
+//
+// A parts split cannot fail to match: a label either carries a part or does
+// not, and "does not" is a value of that dimension like any other.
+function splitCellValues(plan, cell) {
+  const text = String(cell === undefined || cell === null ? '' : cell).trim();
+  const out = {};
+  if (plan.groups) {
+    plan.groups.forEach(g => { out[g.key] = partValueAt(g, text, plan.seps); });
+    return out;
+  }
+  const m = matchPattern(plan.pattern, text);
+  plan.fields.forEach((f, i) => {
+    if (m) {
+      const v = m.fields[f.field];
+      out[f.key] = v === undefined ? '' : v;
+    } else {
+      out[f.key] = i === 0 ? text : '';
+    }
+  });
+  return out;
+}
+
 // Which measure a matched column lands in. An empty `measure` capture means the
 // fallback, which is what lets one pattern separate a count column from a rate
 // column: `(?<measure>MemAcc)?` fires on one and not the other.
 function meltMeasureFor(melt, matched, byValue, appended, taken) {
-  const captured = melt.pattern.hasMeasure ? (matched.fields[PATTERN_MEASURE_FIELD] || '') : '';
+  const captured = melt.hasMeasure ? (matched.measure || '') : '';
   if (!captured) return { spec: melt.fallback, fallback: true };
   let spec = byValue[captured];
   if (!spec) {
@@ -210,6 +344,9 @@ function buildPartSpec(recipe, srcList) {
   const cols = recipe.columns || [];
   const melt = compileMeltPlan(recipe.melt);
   const pathPlan = compilePathPlan(recipe.path);
+  const splits = compileSplitPlans(cols);
+  const splitAt = [];
+  splits.forEach(s => { splitAt[s.index] = s; });
   const dims = [];
   const measures = [];
   const rows = [];
@@ -223,6 +360,7 @@ function buildPartSpec(recipe, srcList) {
   if (recipe.sourceDim) need(recipe.sourceDim);
   if (pathPlan) pathPlan.dims.forEach(d => need(d.key));
   cols.forEach(c => { if (c.role === 'dimension') need(c.name); });
+  splits.forEach(s => s.fields.forEach(f => need(f.key)));
   if (melt) melt.dims.forEach(d => need(d.key));
 
   // measure bookkeeping for the melt
@@ -233,11 +371,23 @@ function buildPartSpec(recipe, srcList) {
     Object.keys(dimValues).forEach(k => { takenKeys[k] = true; });
     cols.forEach(c => { if (c.role === 'measure') takenKeys[c.name] = true; });
     melt.declared.forEach(m => { byValue[m.value] = m; takenKeys[m.key] = true; });
+    // The fallback's key is a default -- "value" unless it was named -- so
+    // whatever already answers to it owns it and the fallback moves aside.
+    // Two measures on one key would write the same field of the same row and
+    // average two different columns together; a measure on a DIMENSION's key
+    // overwrote the dimension value, which put every row outside the declared
+    // domain and dropped the lot, silently and completely.
+    while (takenKeys[melt.fallback.key]) melt.fallback.key += '_value';
+    takenKeys[melt.fallback.key] = true;
   }
   let usedFallback = false;
 
   srcList.forEach(srcRec => {
-    const parsed = parseCsv(srcRec.text, recipe.parse);
+    let parsed = parseCsv(srcRec.text, recipe.parse);
+    // A stored preselect is replayed before anything else is read: the recipe
+    // records what came in, so the dataset is rebuilt from exactly that.
+    const stored = ((recipe.parse || {}).preselect || {})[srcRec.path || srcRec.filename];
+    if (stored) parsed = applySelection(parsed, stored);
     const raw = parsed.header;              // the melt matches these
     const header = dedupeHeader(parsed.header);   // id columns are found by these
     // Matching the deduped names would make a repeated wide header fail `^…$`
@@ -252,13 +402,21 @@ function buildPartSpec(recipe, srcList) {
     }
     Object.keys(constants).forEach(k => seen(k, constants[k]));
 
-    const idIdx = cols.map(c => (c.role === 'ignore' ? -1 : header.indexOf(c.source)));
+    // Looked up even for an ignored column: its own value is dropped, but a
+    // split still reads the cell, which is how a column can contribute its
+    // parts and not itself.
+    const idIdx = cols.map(c => header.indexOf(c.source));
     // A column this file has not got still has to be a value of its dimension,
     // or every row of the file falls outside the declared domain and is dropped
     // whole -- silently, since makeDataset simply skips a tuple it cannot code.
     const gap = fillCell(recipe);
     cols.forEach((c, ci) => {
-      if (c.role === 'dimension' && idIdx[ci] === -1) seen(c.name, gap.trim());
+      if (idIdx[ci] !== -1) return;
+      if (c.role === 'dimension') seen(c.name, gap.trim());
+      const plan = splitAt[ci];
+      if (!plan) return;
+      const got = splitCellValues(plan, gap);
+      plan.fields.forEach(f => seen(f.key, got[f.key]));
     });
 
     // Columns that share a dimension tuple become ONE emitted row carrying
@@ -268,7 +426,7 @@ function buildPartSpec(recipe, srcList) {
     if (melt) {
       const bySig = {};
       for (let i = 0; i < raw.length; i++) {
-        const matched = matchPattern(melt.pattern, raw[i]);
+        const matched = meltReadColumn(melt, raw[i]);
         if (!matched) continue;
         const picked = meltMeasureFor(melt, matched, byValue, appended, takenKeys);
         if (picked.fallback) usedFallback = true;
@@ -296,8 +454,13 @@ function buildPartSpec(recipe, srcList) {
       Object.keys(constants).forEach(k => { base[k] = constants[k]; });
       for (let ci = 0; ci < cols.length; ci++) {
         const c = cols[ci];
-        if (c.role === 'ignore') continue;
         const cell = idIdx[ci] === -1 ? gap : cells[idIdx[ci]];
+        const plan = splitAt[ci];
+        if (plan) {
+          const got = splitCellValues(plan, cell);
+          plan.fields.forEach(f => { base[f.key] = got[f.key]; seen(f.key, got[f.key]); });
+        }
+        if (c.role === 'ignore') continue;
         if (c.role === 'dimension') {
           const v = String(cell).trim();
           base[c.name] = v;
@@ -334,11 +497,19 @@ function buildPartSpec(recipe, srcList) {
       key: d.key, label: d.label, values: dimValues[d.key], labelOverride: d.labelOverride,
     }));
   }
-  cols.forEach(c => {
+  cols.forEach((c, ci) => {
     if (c.role === 'dimension') {
       dims.push({ key: c.name, label: c.label || c.name, values: dimValues[c.name], labelOverride: c.labelOverride });
     } else if (c.role === 'measure') {
       measures.push({ key: c.name, label: c.label || c.name, agg: c.agg || 'mean', format: makeFormat(c.format || 'number') });
+    }
+    // A column's parts sit where the column itself sits: they are row identity,
+    // the same as the column was, and the pattern's order is their order.
+    const plan = splitAt[ci];
+    if (plan) {
+      plan.fields.forEach(f => dims.push({
+        key: f.key, label: f.label, values: dimValues[f.key], labelOverride: f.labelOverride,
+      }));
     }
   });
   if (melt) {
@@ -346,10 +517,20 @@ function buildPartSpec(recipe, srcList) {
       key: d.key, label: d.label, values: dimValues[d.key], labelOverride: d.labelOverride,
     }));
     // The fallback goes first when it was used: with a pattern like the defbl
-    // one it holds the main measurement and the captures are the extras.
-    const meltMeasures = (usedFallback ? [melt.fallback] : [])
-      .concat(melt.declared.filter(m => m.key !== melt.fallback.key))
-      .concat(appended);
+    // one it holds the main measurement and the captures are the extras. Only
+    // when it was used -- a declared level whose text happens to be "value" is
+    // a measure of the file's own, and dropping it as a duplicate of the
+    // unused fallback took its column out of the dataset without saying so.
+    const meltMeasures = [];
+    const emitted = {};
+    const emit = m => {
+      if (!m || emitted[m.key]) return;
+      emitted[m.key] = true;
+      meltMeasures.push(m);
+    };
+    if (usedFallback) emit(melt.fallback);
+    melt.declared.forEach(emit);
+    appended.forEach(emit);
     meltMeasures.forEach(m => measures.push({
       key: m.key, label: m.label || m.key, agg: m.agg || 'mean', format: makeFormat(m.format || 'number'),
     }));
@@ -419,6 +600,10 @@ function datasetFromRecord(rec) {
   const specs = parts.map(p => buildPartSpec(p.recipe, p.sources));
   const spec = specs.length === 1 ? specs[0] : mergeSpecs(specs, parts, recipe);
   const ds = makeDataset({ name: rec.name, dims: spec.dims, measures: spec.measures, rows: spec.rows });
+  // Where it came from, carried on the dataset itself. This is the one place a
+  // record becomes a dataset, so it is the one place that knows both -- and a
+  // plot that names a dataset names this id.
+  ds.__id = rec.id;
   applyMeasureOverrides(ds, recipe.measureOverrides);
   attachCustomMeasures(ds, recipe.custom);
   const allSources = [];
@@ -480,6 +665,140 @@ function persistMeasureOverrides() {
     .catch(() => false);
 }
 
+// ---- a recipe, read back as the decisions that wrote it ---------------------
+// Editing an import means putting the review screen back up with every switch
+// where it was left. A dataset imported since that was possible carries that
+// state verbatim (`rec.ui`), so nothing is inferred. One imported before it
+// does not, and is reconstructed from the recipe -- which holds nearly all of
+// it, because the recipe IS those decisions, written in the form the row loop
+// wants rather than the form the review does.
+//
+// What a recipe cannot say is what was switched OFF. A pattern field left out,
+// a part assigned to no dimension, an ignored folder level: all three are
+// simply absent from it. So a reconstructed state says so, and everything the
+// recipe does not mention then reads as "excluded" rather than as "propose it
+// again" -- otherwise re-opening an import would quietly reinstate the columns
+// its author had dropped.
+function fieldCfgFromRecipe(fields) {
+  const out = {};
+  (fields || []).forEach(f => {
+    if (!f || !f.field) return;
+    out[f.field] = {
+      key: f.key || f.field,
+      label: f.label || f.key || f.field,
+      include: true,
+      labelOverride: f.labelOverride || {},
+      labelTouched: true,
+    };
+  });
+  return out;
+}
+
+// The parts reading, inverted: every stored group's parts point back at it, and
+// `defaultOff` says that a part named by none of them was one the user put
+// aside. The group ids are positional because nothing outside this object reads
+// them -- they identify a group only for as long as the review is open.
+function partsCfgFromRecipe(spec, measureAware) {
+  const cfg = {
+    seps: spec.seps === undefined ? PART_SEPS_DEFAULT : spec.seps,
+    assign: {}, groupCfg: {}, measureGid: null, defaultOff: true,
+  };
+  (spec.groups || []).forEach((g, i) => {
+    if (!g) return;
+    const gid = 'g' + i;
+    (g.parts || []).forEach(name => { cfg.assign[name] = gid; });
+    cfg.groupCfg[gid] = {
+      include: true, key: g.key, label: g.label || g.key,
+      labelOverride: g.labelOverride || {}, labelTouched: true,
+    };
+    if (measureAware && g.measure) cfg.measureGid = gid;
+  });
+  return cfg;
+}
+
+function meltUiFromRecipe(spec) {
+  const off = {
+    on: false, kind: 'template', text: '', fieldCfg: {}, measureCfg: {},
+    fallback: { name: 'Value', format: 'number' },
+  };
+  if (!spec || !(spec.pattern || spec.parts)) return off;
+  const fb = spec.measure || {};
+  // A stored format is a decision, so it is marked as one: left untouched, the
+  // review re-guesses a format from the column's numbers on every keystroke and
+  // would overwrite the one that was chosen.
+  const measureCfg = {
+    '': { label: fb.label || 'Value', format: fb.format || 'number', formatTouched: true },
+  };
+  (spec.measures || []).forEach(m => {
+    if (!m) return;
+    measureCfg[m.value] = {
+      label: m.label || m.value, format: m.format || 'number', formatTouched: true,
+    };
+  });
+  const ui = {
+    on: true, kind: 'template', text: '', fieldCfg: {}, measureCfg: measureCfg,
+    fallback: { name: fb.label || 'Value', format: fb.format || 'number' },
+  };
+  if (spec.parts) {
+    ui.kind = 'parts';
+    ui.parts = partsCfgFromRecipe(spec.parts, true);
+  } else {
+    ui.kind = (spec.pattern || {}).kind || 'template';
+    ui.text = (spec.pattern || {}).text || '';
+    ui.fieldCfg = fieldCfgFromRecipe(spec.fields);
+  }
+  return ui;
+}
+
+// At most one column carries a split, so the recipe is searched for it rather
+// than the review being asked which column it was about.
+function splitUiFromRecipe(cols) {
+  const off = { on: false, source: null, kind: 'template', text: '', fieldCfg: {} };
+  const col = (cols || []).filter(c => c && c.split)[0];
+  if (!col) return off;
+  if (col.split.parts) {
+    return { on: true, source: col.source, kind: 'parts', text: '', fieldCfg: {},
+      parts: partsCfgFromRecipe(col.split.parts, false) };
+  }
+  const pat = col.split.pattern || {};
+  return { on: true, source: col.source, kind: pat.kind || 'template',
+    text: pat.text || '', fieldCfg: fieldCfgFromRecipe(col.split.fields) };
+}
+
+function pathUiFromRecipe(spec) {
+  const ui = { levelCfg: {}, stem: { on: false, kind: 'template', text: '', fieldCfg: {} } };
+  if (!spec) return ui;
+  (spec.levels || []).forEach(l => {
+    if (!l || l.index === undefined) return;
+    ui.levelCfg[l.index] = { key: l.key, label: l.label || l.key };
+  });
+  const pat = spec.pattern && spec.pattern.spec;
+  if (pat) {
+    ui.stem = { on: true, kind: pat.kind || 'template', text: pat.text || '',
+      fieldCfg: fieldCfgFromRecipe(spec.pattern.fields) };
+  }
+  return ui;
+}
+
+// One record's worth. `union` is not stored in a recipe and does not need to
+// be: several files under one record ARE a union, because files kept apart
+// became a record each.
+function importUiFromRecipe(recipe, sources) {
+  const r = recipe || {};
+  const files = (sources || []).length;
+  const filled = r.fill !== undefined && r.fill !== null;
+  return {
+    reconstructed: true,
+    melt: meltUiFromRecipe(r.melt),
+    split: splitUiFromRecipe(r.columns),
+    path: pathUiFromRecipe(r.path),
+    union: files > 1,
+    forceUnion: files > 1 && filled,
+    fill: filled ? String(r.fill) : 'n/a',
+    addSourceDim: !!r.sourceDim,
+  };
+}
+
 // What a stored recipe will produce, without building it. The dataset cards on
 // the Data tab count dimensions and measures, and with a reshape those no
 // longer live in `columns` alone -- so both readings come from here.
@@ -494,6 +813,7 @@ function recipeNames(recipe) {
     if (c.role === 'dimension') dims.push(c.name);
     else if (c.role === 'measure') measures.push(c.name);
   });
+  compileSplitPlans(cols).forEach(s => s.fields.forEach(f => dims.push(f.key)));
   const melt = compileMeltPlan(recipe && recipe.melt);
   if (melt) {
     melt.dims.forEach(d => dims.push(d.key));

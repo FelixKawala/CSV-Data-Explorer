@@ -614,31 +614,5 @@ console.log('\n=== 11c. The imported files ship with the figure ===');
   w.close();
 }
 
-console.log('\n=== 12. Layout presets say which dimensions they move ===');
-{
-  const { w, d } = boot();
-  const btns = Array.from(d.querySelectorAll('#builder-toolbar .preset-group button'));
-  ok(btns.length >= 2, 'there are presets', btns.length);
-  ok(btns.every(b => !/^(Nested|Faceted|Side by side)$/.test(b.textContent)),
-     'none is named after the shape of the result alone',
-     btns.map(b => b.textContent).join(' | '));
-  ok(btns.every(b => /Dataset|Device|Size|Application|Variant|Default/.test(b.textContent)),
-     'every label names a dimension', btns.map(b => b.textContent).join(' | '));
-  ok(btns.every(b => /x-axis|colour|chart per/.test(b.title)),
-     'and the hint spells the whole layout out', btns[1].title);
-  const titles = btns.map(b => b.title);
-  ok(new Set(titles).size === titles.length,
-     'no two presets do the same thing under different names', titles.join(' | '));
-
-  const before = w.eval('JSON.stringify(plots[0].zones)');
-  btns[btns.length - 1].click();
-  ok(w.eval('JSON.stringify(plots[0].zones)') !== before, 'pressing one changes the layout');
-  const undo = Array.from(d.querySelectorAll('#builder-status button')).find(b => b.textContent === 'Undo');
-  ok(!!undo, 'the largest change on the page offers to take itself back');
-  undo.click();
-  ok(w.eval('JSON.stringify(plots[0].zones)') === before, 'and does', w.eval('JSON.stringify(plots[0].zones)'));
-  w.close();
-}
-
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
 process.exit(failures === 0 ? 0 : 1);

@@ -39,6 +39,9 @@ function setEffectiveZoneList(plot, zoneKey, list) {
 // whole chart, and until now the only way back was to remember where it came
 // from. One slot, not a stack -- the same one Load already uses.
 function moveDimToZone(plot, dimKey, zoneKey, beforeDim) {
+  return withPlotSchema(plot, () => placeDimInZone(plot, dimKey, zoneKey, beforeDim));
+}
+function placeDimInZone(plot, dimKey, zoneKey, beforeDim) {
   const isMetric = dimKey === 'metric';
   const allowed = isMetric ? METRIC_ZONE_KEYS : ZONE_KEYS;
   if (allowed.indexOf(zoneKey) === -1) return;
@@ -86,19 +89,31 @@ function announceZoneMove(dimKey, fromZone, zoneKey, before) {
 }
 
 function renderZonesUI(container, plot, onChange) {
+  return withPlotSchema(plot, () => drawZonesUI(container, plot, onChange));
+}
+function drawZonesUI(container, plot, onChange) {
   container.innerHTML = '';
   const plan = computeAxisPlan(plot);
   const wrap = html('div', 'zones', container);
 
   const grid = isGridType(plot.chartType);
   const isTable = plot.chartType === 'table';
-  const zoneTitle = { x: grid ? 'Columns' : 'X-axis', series: grid ? 'Rows' : 'Series',
-    facet: 'Facets', panel: 'Panels', off: 'Not used' };
+  // Both axes of a correlation plot are quantities, so neither zone is an axis
+  // here: both of them make dots, and the only difference is that Series is the
+  // one the key names. Calling this zone "X-axis" would be a plain lie.
+  const corr = isCorrelation(plot.chartType);
+  const zoneTitle = {
+    x: corr ? 'Dots' : grid ? 'Columns' : 'X-axis',
+    series: corr ? 'Dot colour' : grid ? 'Rows' : 'Series',
+    facet: 'Facets', panel: 'Panels', off: 'Not used',
+  };
   const zoneHint = {
-    x: isTable ? 'each combination becomes one value column; headings nest left → right'
+    x: corr ? 'one dot per combination — these say which combination a dot is'
+       : isTable ? 'each combination becomes one value column; headings nest left → right'
        : grid ? 'nested left → right (first = outermost)'
        : 'nested left → right (first = outermost band)',
-    series: isTable ? 'one row per combination; these become the leading descriptor columns'
+    series: corr ? 'one dot per combination too, and these choose its colour and shape'
+       : isTable ? 'one row per combination; these become the leading descriptor columns'
        : grid ? 'one matrix row per combination'
        : 'colour of the bars within each group',
     facet: 'splits into separate charts — usually leave empty',
@@ -126,6 +141,14 @@ function renderZonesUI(container, plot, onChange) {
       const badge = html('span', 'order-num', chip);
       badge.textContent = 'drawn as panels';
       badge.title = 'These metrics use different scales, so they are stacked as panels rather than sharing this axis.';
+    }
+    // The chip stays where it was put and says what is happening to it, which is
+    // the same courtesy a dimension a comparison has already consumed gets.
+    if ((plan.pinnedDims || []).indexOf(dimKey) !== -1) {
+      const badge = html('span', 'order-num pinned', chip);
+      badge.textContent = 'pinned';
+      badge.title = 'The two axes differ in this, so it cannot also tell one dot from '
+        + 'another. Remove its row under Pins to group by it again.';
     }
 
     if (count > 1) {
@@ -231,9 +254,33 @@ function renderZonesUI(container, plot, onChange) {
 
 // ---- per-dimension included-values dual list ----
 function renderDimIncludedBlock(container, plot, dimKey, onChange) {
+  return withPlotSchema(plot, () => drawDimIncludedBlock(container, plot, dimKey, onChange));
+}
+function drawDimIncludedBlock(container, plot, dimKey, onChange) {
   const dim = DIM_BY_KEY[dimKey];
   const block = html('div', 'dim-block', container);
-  html('div', 'dim-label', block).textContent = dim.label;
+  const label = html('div', 'dim-label', block);
+  html('span', 'dim-label-name', label).textContent = dim.label;
+  // "all" and "none" do the same job for one dimension's list that the import
+  // preselect does for a whole file: excluding or including everything at once
+  // rather than a click per value.
+  const mkBtn = (text, title, cls, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip-mini ' + cls;
+    b.textContent = text;
+    b.title = title;
+    b.addEventListener('click', fn);
+    label.appendChild(b);
+    return b;
+  };
+  mkBtn('all', 'Show every value of ' + dim.label, 'dim-all', () => {
+    plot.included[dimKey] = dim.values.slice();
+    onChange();
+  });
+  mkBtn('none', 'Show nothing of ' + dim.label, 'dim-none', () => {
+    plot.included[dimKey] = [];
+    onChange();
+  });
   // Shown/Available still means something for a dimension that is not on the
   // chart: it decides what gets folded into the average, not what appears.
   if ((plot.zones[OFF_ZONE] || []).indexOf(dimKey) !== -1) {

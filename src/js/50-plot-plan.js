@@ -1,9 +1,144 @@
 // axis planning, cartesian product, facet recursion, leaves
+
+// ---- correlation pins -------------------------------------------------------
+// A correlation plot's two axes are two readings of the same tuple that differ
+// only in what is pinned: X takes one value of the pinned dimension, Y takes the
+// other. Everything below reads the pins through `pinsOf`, which re-validates
+// them on every call -- a row naming a value the data no longer has can then
+// never reach a lookup, whatever is in a stored view.
+function pinsOf(plot) {
+  return withPlotSchema(plot, () => (
+    isCorrelation(plot.chartType) ? normalisePins(plot.pins) : []));
+}
+function pinnedDimsOf(plot) { return pinsOf(plot).map(r => r.over); }
+function metricPinnedIn(plot) { return pinnedDimsOf(plot).indexOf(MEASURE_DIM) !== -1; }
+// A pin's x or y may be one value or several, since one axis can hold more than
+// one reading. `pinValues` always reads it as a list.
+function pinValues(v) {
+  return Array.isArray(v) ? v.slice() : (v === undefined || v === null ? [] : [v]);
+}
+// One axis of the old single-value pins was a single overlay. Several values
+// make it several readings, so `pinChoices` enumerates them: every choice of
+// one x value and one y value per pinned dimension. One choice is the case the
+// chart has always been.
+function pinChoices(plot) {
+  const rows = pinsOf(plot).map(r => ({ over: r.over, xs: pinValues(r.x), ys: pinValues(r.y) }));
+  if (!rows.length) return [];
+  const out = [];
+  const xv = {}, yv = {};
+  const walk = i => {
+    if (i === rows.length) { out.push({ xv: Object.assign({}, xv), yv: Object.assign({}, yv) }); return; }
+    const r = rows[i];
+    r.xs.forEach(x => r.ys.forEach(y => {
+      xv[r.over] = x; yv[r.over] = y;
+      walk(i + 1);
+    }));
+  };
+  walk(0);
+  return out;
+}
+// Which measures a plot actually READS. Normally the ones shown; a correlation
+// plot whose axes differ in Metric reads the ones its pin names instead -- and
+// those are what decide which dimensions the measures have already consumed, so
+// a pinned comparison measure does not leave the dimension it compares over
+// drawing the same dot once per value of it.
+function metricsInPlay(plot) {
+  const row = pinsOf(plot).filter(r => r.over === MEASURE_DIM)[0];
+  if (!row) return plot.included[MEASURE_DIM] || [];
+  const keys = pinValues(row.x).concat(pinValues(row.y));
+  return keys.filter((k, i) => keys.indexOf(k) === i);
+}
+// What each axis measures, and whether one range can serve both. Two readings of
+// one measure always share a scale; two different measures share one only when
+// their formats agree, and that is exactly when a 45 degree line means anything.
+// An axis that would hold several measures has to hold ONE kind of measure for
+// the axis to be a scale at all, so a mix on either side is reported as such.
+function correlationKinds(plot, fallback) {
+  const row = pinsOf(plot).filter(r => r.over === MEASURE_DIM)[0];
+  const fmt = k => (METRIC_BY_KEY[k] ? METRIC_BY_KEY[k].format : fallback);
+  // A Metric pin names the kinds the axes read; without one both axes read the
+  // same measure, whose kind is the plot's own.
+  const xRaw = row ? pinValues(row.x) : [];
+  const yRaw = row ? pinValues(row.y) : [];
+  const xKinds = xRaw.length ? xRaw.map(fmt).filter(Boolean) : (fallback ? [fallback] : []);
+  const yKinds = yRaw.length ? yRaw.map(fmt).filter(Boolean) : (fallback ? [fallback] : []);
+  const oneKind = ks => !ks.length || ks.every(k => sameAxis(ks[0], k));
+  const xMixed = !oneKind(xKinds), yMixed = !oneKind(yKinds);
+  const shared = !xMixed && !yMixed && xKinds.length && yKinds.length
+    && xKinds.every(k => yKinds.every(y => sameAxis(k, y)));
+  return {
+    xKind: (xKinds[0] || fallback), yKind: (yKinds[0] || fallback),
+    shared: shared, xMixed: xMixed, yMixed: yMixed,
+  };
+}
+// What one axis is: the measure(s) it reads, then what it is pinned to. The
+// measure's own name rather than its kind -- "Rate A at setB" says what is
+// plotted, where "rate % at setB" only says what units it is in.
+function pinAxisLabel(plot, which, kind, baseMetricKey) {
+  const parts = [];
+  const row = pinsOf(plot).filter(r => r.over === MEASURE_DIM)[0];
+  const named = row ? pinValues(row[which]).map(v => (METRIC_BY_KEY[v] ? METRIC_BY_KEY[v].label : v)).filter(Boolean) : [];
+  if (named.length) parts.push(named.join(' / '));
+  else if (kind) parts.push(axisLabelOf(kind));
+  pinsOf(plot).forEach(r => {
+    if (r.over === MEASURE_DIM) return;
+    const vv = pinValues(r[which]).map(v => dimValueLabel(r.over, v));
+    parts.push(DIM_BY_KEY[r.over].label + ': ' + vv.join(' / '));
+  });
+  return parts.join(' · ') || (kind ? axisLabelOf(kind) : '');
+}
+// A reading's own colour. One pinned dimension and it takes the dimension's
+// colour for the value it reads -- a measure keeps its colour wherever it is
+// compared, and so does a variant. More than one pinned dimension and there is
+// no one value to key it to, so it takes the palette by slot instead.
+function corrSeriesColor(plot, ds) {
+  const palette = (plot.style && plot.style.palette) || 'default';
+  const rows = pinsOf(plot);
+  if (rows.length === 1) {
+    const r = rows[0];
+    const v = ds.choice.xv[r.over];
+    if (r.over === MEASURE_DIM && METRIC_BY_KEY[v]) return metricColorOf(palette, v);
+    if (r.over !== MEASURE_DIM) return paletteDimValueColor(palette, r.over, v);
+  }
+  return paletteColorAt(palette, ds.slot);
+}
+// What one reading is called in the key: "data0 vs baseline" names both axes of
+// it, and the unpinned series dims' value follows when there is one.
+function corrReadingLabel(plot, c, sv, nSeriesDims) {
+  const name = (over, v) => over === MEASURE_DIM
+    ? (METRIC_BY_KEY[v] ? METRIC_BY_KEY[v].label : v)
+    : dimValueLabel(over, v);
+  const parts = [];
+  pinsOf(plot).forEach(r => {
+    const xl = name(r.over, c.xv[r.over]);
+    const yl = name(r.over, c.yv[r.over]);
+    parts.push(xl === yl ? xl : xl + ' vs ' + yl);
+  });
+  const base = parts.join(' · ');
+  if (nSeriesDims && sv.label !== 'All') return base ? base + ' · ' + sv.label : sv.label;
+  return base;
+}
+
 // ---- recursive facet + leaf chart rendering ----
 // Metric is a dedicated "data shown" selector. With exactly 1 metric included it is
 // a pure filter; with 2+ it joins the grouping as a chip in plot.metricZone.
+// Everything below reads the dimensions and measures of the plot's own dataset,
+// so it is entered under that dataset rather than under whichever one the page
+// last looked at. The pattern throughout: the `render`/`compute` name is the
+// entry point and does the binding, the `draw`/`...Of` name is the body.
+// Wrapping this one covers the most ground -- four callers, and it hands back
+// plain data every one of them reads afterwards.
 function computeAxisPlan(plot) {
-  const metricActive = plot.included.metric.length > 1;
+  return withPlotSchema(plot, () => axisPlanOf(plot));
+}
+function axisPlanOf(plot) {
+  const pinnedDims = pinnedDimsOf(plot);
+  // A pin CONSUMES the dimension it names: both axes already say which value of
+  // it they read. For Metric that also means it is not an axis and not a panel
+  // split -- otherwise a plot showing two measures would be stacked into one
+  // panel per scale, and the correlation between them, which is the whole
+  // chart, could never be drawn at all.
+  const metricActive = plot.included.metric.length > 1 && !metricPinnedIn(plot);
   // Two measures may share a y-axis only when their formats agree on one. Comparing
   // formats by identity was wrong: two unrelated `number` measures (nanoseconds and
   // bytes) would have been merged onto one scale.
@@ -65,10 +200,21 @@ function computeAxisPlan(plot) {
   // dimension splitting the page into one chart per value of itself, each an
   // identical copy -- the comparison had already consumed it, so every copy
   // held the same numbers.
-  const ignoredDims = metricsIgnoredDims(plot.included[MEASURE_DIM]);
+  const ignoredDims = metricsIgnoredDims(metricsInPlay(plot));
   if (ignoredDims.length) {
     ZONE_KEYS.forEach(k => {
       axisDims[k] = axisDims[k].filter(dk => ignoredDims.indexOf(dk) === -1);
+    });
+  }
+  // A pinned dimension is spent, and is removed from EVERY zone for the same
+  // reason as an ignored one. Left in Facets it would draw one card per value
+  // of it, each an identical chart, because the pin overrides the facet's value
+  // on both axes. Left in "Not used" it would be worse than useless: the
+  // averaging there overwrites the tuple's value for that dimension, which
+  // would quietly make the two axes read the same thing.
+  if (pinnedDims.length) {
+    ZONE_KEYS.forEach(k => {
+      axisDims[k] = axisDims[k].filter(dk => pinnedDims.indexOf(dk) === -1);
     });
   }
   // Not a grouping and not a filter: the values are read and folded together,
@@ -81,6 +227,7 @@ function computeAxisPlan(plot) {
   axisDims.series.forEach(k => { seriesCount *= Math.max(plot.included[k].length, 0); });
   return {
     ignoredDims: ignoredDims,
+    pinnedDims: pinnedDims,
     offDims: offDims,
     metricActive: metricActive,
     zoneDims: zoneDims,
@@ -95,7 +242,11 @@ function computeAxisPlan(plot) {
     dualEligible: mixedKinds && groups.length === 2 && supportsDualAxis(plot.chartType),
     metricKinds: kindNames,
     // whether an override is on offer, and whether it is doing anything
-    oneAxisEligible: groups.length > 1 && !isGridType(plot.chartType),
+    // Not offered where the two axes are separate scales by design: forcing
+    // "one shared y-axis" on a correlation plot would be an instruction about
+    // an axis arrangement it does not have.
+    oneAxisEligible: groups.length > 1 && !isGridType(plot.chartType)
+      && !isCorrelation(plot.chartType),
     oneAxisForced: !!plot.forceOneAxis && groups.length > 1 && !dualAxis,
     // how many y-scales the shown measures need. A frame has two axes, so past
     // two the second-axis offer is withdrawn -- and the head says why rather
@@ -140,7 +291,11 @@ function metricsIgnoredDims(inPlay) {
 // in play do not vary along, so a comparison is not repeated once per value of
 // the thing it already compares.
 function effectiveKind(plot, fixed) {
-  const inPlay = (fixed[MEASURE_DIM] !== undefined) ? [fixed[MEASURE_DIM]] : plot.included[MEASURE_DIM];
+  // A pinned Metric decides this instead of `fixed` and instead of the shown
+  // list: the pin is what the axes read, and one of the two measures it names
+  // is the one this leaf draws with.
+  const inPlay = metricPinnedIn(plot) ? metricsInPlay(plot)
+    : (fixed[MEASURE_DIM] !== undefined) ? [fixed[MEASURE_DIM]] : plot.included[MEASURE_DIM];
   const formats = [];
   const groups = [];
   inPlay.forEach(mk => {
@@ -354,6 +509,11 @@ function renderLeafPanels(plot, fixed, axes, container) {
 }
 
 function renderLeafOne(plot, fixed, axes, container, opts) {
+  // The deepest point that still knows which plot it is drawing, and the last
+  // one before numbers are read. A path that got here without entering the
+  // plot's dataset would draw a plausible chart of the wrong data, so in strict
+  // mode it says so instead.
+  assertPlotSchema(plot, 'renderLeafOne');
   opts = opts || {};
   const seriesDims = axes.seriesDims, xDims = axes.xDims;
   const emptyDim = seriesDims.concat(xDims).find(k => plot.included[k].length === 0);
@@ -371,9 +531,16 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     return;
   }
   const isTable = plot.chartType === 'table';
+  const isCorr = isCorrelation(plot.chartType);
   const dual = !!axes.dualAxis;
   const kindInfo = effectiveKind(plot, fixed);
-  if (kindInfo.mixed && !isTable && !dual) {
+  // A correlation plot reads one quantity per axis and gives each its own
+  // scale, so two measures of different kind are the point of it rather than a
+  // mixture on one axis. The test is the pin, not the chart type: with Metric
+  // NOT pinned, two measures of different scale are genuinely mixed here too,
+  // and are still split into panels.
+  const corrPinned = isCorr && metricPinnedIn(plot);
+  if (kindInfo.mixed && !isTable && !dual && !corrPinned) {
     html('div', 'plot-empty', container).textContent =
       'This chart mixes metrics of different scale (' + kindInfo.kinds.join(', ') + ') on one axis - drag Metric to the Panels zone to stack them as sub-charts with their own scales, or restrict "Data shown" to a single kind.';
     return;
@@ -441,23 +608,94 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
   // this the chart would be empty rather than averaged.
   const offDims = (axes.offDims || []).filter(k => fixed[k] === undefined);
   const offValues = k => plot.included[k] || [];
-  function getValue(sEntry, xEntry) {
-    const ctx = Object.assign({}, fixed, sEntry.vals, xEntry.vals);
-    return offDims.length ? metricValueOver(ctx, offDims, offValues) : metricValueAt(ctx);
+  // A pin is a ctx overlay applied LAST, so it wins over the values a facet
+  // pinned and over the dot's own tuple -- which is what makes it a pin.
+  // `overlay` is null for every chart type but the correlation plot, and then
+  // this is the reader it has always been.
+  // Named rather than ambient, alone among the reads in this file. Everywhere
+  // else the live schema decides a label or which options a list offers, and
+  // getting it wrong is visible; here it decides which numbers are drawn, and
+  // getting it wrong is a chart that looks entirely reasonable.
+  const ds = datasetOf(plot);
+  function valueAt(sEntry, xEntry, overlay) {
+    if (!ds) return null;
+    const ctx = Object.assign({}, fixed, sEntry.vals, xEntry.vals, overlay || null);
+    return offDims.length
+      ? datasetValueOver(ds, ctx, offDims, offValues)
+      : datasetValueAt(ds, ctx);
+  }
+  function getValue(sEntry, xEntry) { return valueAt(sEntry, xEntry, null); }
+  const corrChoices = isCorr ? pinChoices(plot) : [];
+  // The one overlay the chart has always used, for the common single-value pins;
+  // the multi-value case reads each choice's own overlay below.
+  const pinX = isCorr && corrChoices.length === 1 ? corrChoices[0].xv : null;
+  const pinY = isCorr && corrChoices.length === 1 ? corrChoices[0].yv : null;
+  // A correlation plot with a Metric pin that reads a mix of scales on one axis
+  // has no scale to draw that axis with, so it says so rather than drawing dots
+  // the axis cannot place.
+  if (isCorr && metricPinnedIn(plot)) {
+    const ck = correlationKinds(plot, kindInfo.kind);
+    if (ck.xMixed || ck.yMixed) {
+      html('div', 'plot-empty', container).textContent =
+        'One axis would read measures of different scale — an axis is one scale, '
+        + 'so keep one kind of measure per axis.';
+      return;
+    }
   }
   // drop combinations that have no data at all (e.g. 1024-line configs on the dev1,
   // or Tuned-altnterleaved on apps that don't have it) so the axis has no dead slots
-  const xVals = xAll.filter(x => seriesAll.some(s => getValue(s, x) !== null));
-  const sVals = seriesAll.filter(s => xVals.some(x => getValue(s, x) !== null));
+  //
+  // For a correlation plot this has to ask the pinned question, not the bare
+  // one: with the pinned dimension absent from the tuple the bare lookup names
+  // no row at all and returns null everywhere, which would prune away every
+  // combination and report "no data" for a chart that has plenty. A dot also
+  // needs BOTH readings -- a tuple measured on one axis only is half a point,
+  // and half a point cannot be placed.
+  const live = isCorr
+    ? corrChoices.length
+      ? (s, x) => corrChoices.some(c => valueAt(s, x, c.xv) !== null && valueAt(s, x, c.yv) !== null)
+      : (s, x) => getValue(s, x) !== null
+    : (s, x) => getValue(s, x) !== null;
+  const xVals = xAll.filter(x => seriesAll.some(s => live(s, x)));
+  const sVals = seriesAll.filter(s => xVals.some(x => live(s, x)));
   if (xVals.length === 0 || sVals.length === 0) {
     html('div', 'plot-empty', container).textContent = 'No data for this combination.';
     return;
   }
 
+  // One series per reading. A correlation plot's series are the readings its
+  // pin names: single-value pins give the series the chart has always had, and
+  // a pin holding several values on one axis gives one series per choice of
+  // them -- data0 vs baseline and data1 vs baseline in one chart, told apart by
+  // colour and shape. Built here because the series styling and the per-series
+  // overrides already are.
+  const corrSeries = (function () {
+    if (!isCorr) return null;
+    const multi = corrChoices.length > 1;
+    const out = [];
+    sVals.forEach(sv => corrChoices.forEach(c => {
+      const ds = {
+        // a single reading keeps the series signature it has always had, so
+        // per-series overrides made for it survive; several readings need a
+        // signature of their own, and get the pinned values in it
+        vals: multi ? Object.assign({}, sv.vals, c.xv) : sv.vals,
+        sv: sv, choice: c, slot: out.length,
+        label: multi ? corrReadingLabel(plot, c, sv, sDims.length) : sv.label,
+      };
+      ds.sig = seriesSignature(ds);
+      const ov = style.series[ds.sig] || {};
+      ds.color = ov.color || corrSeriesColor(plot, ds);
+      ds.shape = ov.shape || (style.markers === 'auto' ? markShapeAt(out.length) : style.markers);
+      ds.pattern = ov.pattern || (style.barPattern === 'auto' ? barPatternAt(out.length) : style.barPattern);
+      out.push(ds);
+    }));
+    return out;
+  })();
+
   // What the style panel offers overrides for: the series this chart really has,
   // after pruning, deduplicated across facets.
   if (!plot.__drawnSeries) plot.__drawnSeries = [];
-  sVals.forEach(sv => {
+  (corrSeries || sVals).forEach(sv => {
     if (!plot.__drawnSeries.some(o => o.sig === sv.sig)) {
       plot.__drawnSeries.push({ sig: sv.sig, label: sv.label, color: sv.color });
     }
@@ -502,8 +740,26 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
   // gap the line steps over rather than the end of it.
   const lineRuns = plot.lineAlong ? lineRunsFor(xVals, xDimsOut, plot.lineAlong) : null;
 
+  // One dot per surviving tuple, read twice. Built here rather than in the leaf
+  // because this is where the cartesian product, the pruning and the series'
+  // colours already are -- the leaf should receive numbers it can place.
+  let points = null;
+  let corr = null;
+  if (isCorr) {
+    corr = correlationKinds(plot, kindInfo.kind);
+    points = [];
+    corrSeries.forEach(ds => xVals.forEach(xv => {
+      const vx = valueAt(ds.sv, xv, ds.choice.xv);
+      const vy = valueAt(ds.sv, xv, ds.choice.yv);
+      if (vx === null || vy === null) return;
+      const parts = [xv.label, ds.label].filter(t => t && t !== 'All');
+      points.push({ x: vx, y: vy, sv: ds, xv: xv, label: parts.join(SEP) || 'All' });
+    }));
+  }
+
+  const corrOut = corrSeries || sVals;
   const spec = {
-    series: sVals, x: xVals, xDims: xDimsOut, seriesDims: sDims,
+    series: corrOut, x: xVals, xDims: xDimsOut, seriesDims: sDims,
     lineBreaks: lineBreaks, lineRuns: lineRuns,
     colourBy: style.colourBy,
     getValue: getValue, kind: kindInfo.kind,
@@ -515,9 +771,9 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
     // a plain record of what is plotted, so an export can ship data instead of shapes
     dataTable: {
       xDims: xDimsOut, seriesDims: sDims, kind: kindInfo.kind, chartType: plot.chartType,
-      seriesLabels: sVals.map(sv => sv.label),
+      seriesLabels: corrOut.map(sv => sv.label),
       // so a pgfplots figure carries the same appearance as the chart on screen
-      seriesStyles: sVals.map(sv => ({ color: sv.color, shape: sv.shape, pattern: sv.pattern })),
+      seriesStyles: corrOut.map(sv => ({ color: sv.color, shape: sv.shape, pattern: sv.pattern })),
       yAxis: axisSlotFor(plot, kindInfo.kind), yAxisRight: plot.yAxisRight,
       markers: style.markers,
       // pgfplots gives one colour per \addplot, so a chart whose colour varies
@@ -531,14 +787,58 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
       })),
     },
     metricKeyAt: function (sEntry, xEntry) {
-      const ctx = Object.assign({}, fixed, sEntry.vals, xEntry.vals);
+      // A correlation dot has two metrics; the Y one is what colours it, since
+      // the y-axis is what the eye reads a dot's height against.
+      const ctx = Object.assign({}, fixed, sEntry.vals, xEntry.vals,
+        sEntry.choice ? sEntry.choice.yv : (isCorr ? pinY : null));
       return ctx.metric;
     },
     showXLabels: opts.showXLabels !== false,
     showLegend: opts.showLegend !== false,
   };
   spec.dualAxis = dual;
-  if (isTable) renderTableLeaf(container, spec);
+  if (isCorr) {
+    spec.points = points;
+    spec.pins = pinsOf(plot);
+    spec.xKind = corr.xKind;
+    spec.yKind = corr.yKind;
+    spec.sharedScale = corr.shared;
+    spec.diagonal = corr.shared;
+    const baseMetric = fixed[MEASURE_DIM] || (plot.included[MEASURE_DIM] || [])[0];
+    spec.xAxisLabel = pinAxisLabel(plot, 'x', corr.xKind, baseMetric);
+    spec.yAxisLabel = pinAxisLabel(plot, 'y', corr.yKind, baseMetric);
+    // One quantity on both axes means ONE range object, so the two cannot be
+    // set apart by hand and quietly break the claim the diagonal makes. Two
+    // quantities get a range each, and the horizontal one borrows the slot the
+    // second y-axis would have used -- this chart type has no second y-axis, so
+    // nothing else wants it and no new stored state is needed.
+    spec.yAxis = plot.yAxis;
+    spec.xAxis = corr.shared ? plot.yAxis : plot.yAxisRight;
+    spec.dataTable.scatter = true;
+    spec.dataTable.pointCols = 2;
+    spec.dataTable.kind = corr.yKind;
+    spec.dataTable.xKind = corr.xKind;
+    spec.dataTable.xAxis = spec.xAxis;
+    spec.dataTable.yAxis = spec.yAxis;
+    spec.dataTable.diagonal = corr.shared;
+    spec.dataTable.band = corr.shared && !!style.diagBand;
+    spec.dataTable.xAxisLabel = spec.xAxisLabel;
+    spec.dataTable.yAxisLabel = spec.yAxisLabel;
+    spec.dataTable.rows = xVals.map(xv => ({
+      label: xv.label,
+      parts: xv.labels.slice(),
+      values: corrSeries.reduce((acc, ds) => acc.concat(
+        [valueAt(ds.sv, xv, ds.choice.xv), valueAt(ds.sv, xv, ds.choice.yv)]), []),
+    }));
+    // the drawn span, so an exported diagonal covers the same ground as the one
+    // on screen rather than the whole axis
+    const spanVals = [];
+    points.forEach(p => { spanVals.push(p.x); spanVals.push(p.y); });
+    spec.dataTable.range = spanVals.length
+      ? [Math.min.apply(null, spanVals), Math.max.apply(null, spanVals)] : [0, 1];
+  }
+  if (isCorr) renderCorrelationLeaf(container, spec);
+  else if (isTable) renderTableLeaf(container, spec);
   else if (plot.chartType === 'matrix') renderMatrixLeaf(container, spec);
   else if (plot.chartType === 'diverging') renderBarLeafDiverging(container, spec);
   else if (dual) renderDualAxisLeaf(container, spec, plot.chartType === 'lines');
@@ -570,6 +870,21 @@ function renderLeafOne(plot, fixed, axes, container, opts) {
       names.join(' and ') + (names.length === 1 ? ' is' : ' are')
       + ' not a grouping here — this measure already compares or averages across '
       + (names.length === 1 ? 'it' : 'them') + '.';
+  }
+  // The same courtesy for a pinned dimension: the chip stays where it was put,
+  // so the chart says why it is doing nothing there.
+  const pinNote = (spec.pins || []).filter(r => {
+    const z = plot.zones;
+    return r.over === MEASURE_DIM
+      || AXIS_ZONE_KEYS.concat([OFF_ZONE]).some(k => (z[k] || []).indexOf(r.over) !== -1);
+  });
+  if (pinNote.length) {
+    html('div', 'chart-note', container).textContent = pinNote.map(r =>
+      DIM_BY_KEY[r.over].label + ' (X = ' + pinValues(r.x).map(v => dimValueLabel(r.over, v)).join(', ')
+      + ', Y = ' + pinValues(r.y).map(v => dimValueLabel(r.over, v)).join(', ') + ')').join(' · ')
+      + ' — the two axes differ in '
+      + (pinNote.length === 1 ? 'this, so it tells' : 'these, so they tell')
+      + ' no dot from another.';
   }
 }
 
@@ -617,6 +932,9 @@ function metricSubset(plot, keys) {
 }
 
 function renderPlotChart(plot, container) {
+  return withPlotSchema(plot, () => drawPlotChart(plot, container));
+}
+function drawPlotChart(plot, container) {
   container.innerHTML = '';
   if (plot.included.metric.length === 0) {
     html('div', 'plot-empty', container).textContent = 'Nothing shown - Metric has no included values.';
@@ -638,7 +956,10 @@ function renderPlotChart(plot, container) {
   // but no measure is "constant along which measure is shown", and asking left
   // every group empty.
   const facetable = plan.facetDims.filter(k => k !== MEASURE_DIM);
-  if (facetable.length && plot.included[MEASURE_DIM].length > 1) {
+  // With Metric pinned, the shown list is not what is drawn -- the pin names the
+  // two measures -- so splitting the plot by which of them is flat where would
+  // be splitting on something this chart does not read.
+  if (facetable.length && plot.included[MEASURE_DIM].length > 1 && !metricPinnedIn(plot)) {
     const groups = [];
     const at = {};
     plot.included[MEASURE_DIM].forEach(mk => {
@@ -694,7 +1015,14 @@ function renderPlotChart(plot, container) {
   }
   const fixed = {};
   if (!plan.metricActive) fixed.metric = plot.included.metric[0];
-  renderFacetLevel(plot, plan.facetDims, fixed, container, axesFromPlan(plan));
+  // "Facets in a row": the top-level facet cards sit side by side, wrapping,
+  // instead of one below the other -- a facet dimension with many values draws
+  // a page taller than the screen. The notes stay above, in the plot render;
+  // only the cards go into the grid.
+  const facetHost = plot.facetsInRow
+    ? html('div', 'facet-grid', container)
+    : container;
+  renderFacetLevel(plot, plan.facetDims, fixed, facetHost, axesFromPlan(plan));
 }
 
 // The x positions each line passes through, when the user has named the

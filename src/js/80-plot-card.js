@@ -4,7 +4,69 @@
 // hiding it by default would make the settings harder to find than the crowding
 // it exists to cure.
 const axesOpen = {};
+// The pins strip is the same idea for the correlation plot: open until closed,
+// since a chart with nothing pinned has nothing to draw.
+const pinsOpen = {};
+// Which config blocks are folded away, keyed plot and block. Open until closed:
+// a control that starts hidden is a control nobody finds, and the point of
+// folding one is to get the chart back on screen once you know where it is.
+const blockOpen = {};
+
+// A config block with a heading that folds it. Returns the body to fill, or
+// null when it is folded -- so a collapsed block costs nothing to render, which
+// matters on a card holding a dimension picker per dimension.
+function blockBody(block, plot, key, title) {
+  const id = plot.id + ':' + key;
+  const open = blockOpen[id] !== false;
+  const t = html('button', 'block-toggle', block);
+  t.type = 'button';
+  t.setAttribute('data-block', key);
+  t.textContent = (open ? '▾  ' : '▸  ') + title;
+  t.addEventListener('click', () => {
+    blockOpen[id] = !open;
+    renderPlotCard(plot);
+  });
+  return open ? html('div', 'block-body', block) : null;
+}
+
+// Dragging the divider between the controls and the chart. One width for every
+// card: two cards disagreeing about it would read as a rendering fault, and the
+// question "how much room do the controls need" has one answer per screen.
+const LS_CONFIG_W = 'viz-config-width';
+function applyConfigWidth() {
+  const host = document.getElementById('plots');
+  if (!host) return;
+  let w = 0;
+  try { w = Number(localStorage.getItem(LS_CONFIG_W)) || 0; } catch (e) { w = 0; }
+  if (w >= 220 && w <= 900) host.style.setProperty('--config-w', w + 'px');
+}
+function attachSplitter(el) {
+  el.addEventListener('mousedown', down => {
+    const host = document.getElementById('plots');
+    const controls = el.previousSibling;
+    if (!host || !controls) return;
+    down.preventDefault();
+    const startX = down.clientX;
+    const startW = controls.getBoundingClientRect().width || 340;
+    const move = e => {
+      const w = Math.max(220, Math.min(900, startW + (e.clientX - startX)));
+      host.style.setProperty('--config-w', w + 'px');
+      try { localStorage.setItem(LS_CONFIG_W, String(Math.round(w))); } catch (err) {}
+    };
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      document.body.classList.remove('dragging-splitter');
+    };
+    document.body.classList.add('dragging-splitter');
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+}
 function renderPlotCard(plot) {
+  return withPlotSchema(plot, () => drawPlotCard(plot));
+}
+function drawPlotCard(plot) {
   const container = document.getElementById('plot-card-' + plot.id);
   if (!container) return;
   container.innerHTML = '';
@@ -13,6 +75,7 @@ function renderPlotCard(plot) {
   const head = html('div', 'plot-head', container);
   const title = html('div', 'plot-title', head);
   title.textContent = 'Plot ' + (plots.indexOf(plot) + 1);
+  renderPlotDatasetPicker(head, plot, rerender);
 
   const typeSel = document.createElement('select');
   CHART_TYPES.forEach(pair => {
@@ -20,10 +83,147 @@ function renderPlotCard(plot) {
     typeSel.appendChild(o);
   });
   typeSel.value = plot.chartType;
-  typeSel.addEventListener('change', () => { plot.chartType = typeSel.value; rerender(); persistPlotsDebounced(); });
+  // Bound, not bare: this reads the plot's dimensions to propose a pin BEFORE
+  // anything re-renders, and by the time a click arrives the page may be
+  // showing something else. The handlers that only change the plot and
+  // re-render need no such thing -- the re-render binds itself.
+  typeSel.addEventListener('change', bindDataset(() => {
+    plot.chartType = typeSel.value;
+    // A correlation plot with nothing pinned is an empty frame and an
+    // instruction, so switching to it proposes the obvious first question
+    // rather than asking one.
+    if (isCorrelation(plot.chartType) && !normalisePins(plot.pins).length) {
+      plot.pins = defaultPins();
+    }
+    rerender(); persistPlotsDebounced();
+  }));
   head.appendChild(typeSel);
 
   const headPlan = computeAxisPlan(plot);
+  // ---- what the two axes differ in ----------------------------------------
+  // Its own strip rather than a row of selects in the head: three selects per
+  // row and up to three rows would crowd out everything beside it, and this is
+  // set once and then left alone. Collapsible for the same reason the axis
+  // strip is.
+  if (isCorrelation(plot.chartType)) {
+    const pinsBar = html('div', 'plot-pins-bar', null);
+    const pins = normalisePins(plot.pins);
+    plot.pins = pins;
+    const used = pins.map(r => r.over);
+    const commit = () => { rerender(); persistPlotsDebounced(); };
+    const pinList = v => Array.isArray(v) ? v.slice() : (v === undefined ? [] : [v]);
+    const setPinList = (row, which, list) => { row[which] = list.length === 1 ? list[0] : list; };
+    // One select per value on the axis, plus a ＋ that adds the next value not
+    // already there: an axis can hold several readings -- data0 AND data1
+    // against one baseline -- each drawn as its own series.
+    const axisControls = (row, which, line) => {
+      const wrap = html('span', 'pin-axis', line);
+      html('span', 'mini-label', wrap).textContent = which === 'x' ? 'X =' : 'Y =';
+      const vals = pinList(row[which]);
+      if (!vals.length) vals.push(DIM_BY_KEY[row.over].values[0]);
+      vals.forEach((v, idx) => {
+        const sel = document.createElement('select');
+        sel.className = 'pin-' + which;
+        DIM_BY_KEY[row.over].values.forEach(val => {
+          const o = document.createElement('option');
+          o.value = val; o.textContent = dimValueLabel(row.over, val);
+          sel.appendChild(o);
+        });
+        sel.value = v;
+        sel.addEventListener('change', () => {
+          const list = pinList(row[which]);
+          list[idx] = sel.value;
+          setPinList(row, which, list);
+          commit();
+        });
+        wrap.appendChild(sel);
+        if (idx > 0) {
+          const rm = document.createElement('button');
+          rm.type = 'button'; rm.className = 'btn small ghost pin-remove'; rm.textContent = '×';
+          rm.title = 'Take this reading off the ' + (which === 'x' ? 'X' : 'Y') + ' axis';
+          rm.addEventListener('click', () => {
+            const list = pinList(row[which]);
+            list.splice(idx, 1);
+            setPinList(row, which, list);
+            commit();
+          });
+          wrap.appendChild(rm);
+        }
+      });
+      const add = document.createElement('button');
+      add.type = 'button'; add.className = 'btn small ghost pin-add-val';
+      add.textContent = '＋';
+      add.title = 'Add another reading to this axis — each gets its own colour and shape';
+      add.addEventListener('click', () => {
+        const list = pinList(row[which]);
+        const taken = {};
+        list.forEach(v => { taken[v] = true; });
+        const next = DIM_BY_KEY[row.over].values.filter(v => !taken[v])[0];
+        if (next === undefined) return;
+        list.push(next);
+        setPinList(row, which, list);
+        commit();
+      });
+      wrap.appendChild(add);
+      return wrap;
+    };
+    pins.forEach((row, i) => {
+      const line = html('div', 'pin-row', pinsBar);
+      line.setAttribute('data-index', String(i));
+      html('span', 'mini-label', line).textContent = i === 0 ? 'X and Y differ in' : 'and also in';
+      const overSel = document.createElement('select');
+      overSel.className = 'pin-over';
+      // the dimensions still free, plus this row's own
+      pinnableDims().filter(k => k === row.over || used.indexOf(k) === -1).forEach(k => {
+        const o = document.createElement('option');
+        o.value = k; o.textContent = DIM_BY_KEY[k].label;
+        overSel.appendChild(o);
+      });
+      overSel.value = row.over;
+      overSel.addEventListener('change', bindDataset(() => {
+        const vals = DIM_BY_KEY[overSel.value].values;
+        plot.pins[i] = { over: overSel.value, x: vals[0], y: vals[1] === undefined ? vals[0] : vals[1] };
+        commit();
+      }));
+      line.appendChild(overSel);
+      line.appendChild(axisControls(row, 'x', line));
+      line.appendChild(axisControls(row, 'y', line));
+      const rm = document.createElement('button');
+      rm.type = 'button'; rm.className = 'btn small ghost pin-remove'; rm.textContent = '✕';
+      rm.title = 'Stop differing in ' + DIM_BY_KEY[row.over].label
+        + ' — it goes back to telling one dot from another.';
+      rm.addEventListener('click', () => { plot.pins = pins.filter((_, j) => j !== i); commit(); });
+      line.appendChild(rm);
+    });
+    const free = pinnableDims().filter(k => used.indexOf(k) === -1);
+    if (free.length && pins.length < PIN_LIMIT) {
+      const add = document.createElement('button');
+      add.type = 'button'; add.className = 'btn small pin-add';
+      add.textContent = pins.length ? '＋ and also in …' : '＋ pick what they differ in';
+      add.title = 'A second row lets the axes differ in two things at once — X = the '
+        + 'target measure at Run 1, Y = the result measure at Run 2.';
+      add.addEventListener('click', bindDataset(() => {
+        const vals = DIM_BY_KEY[free[0]].values;
+        plot.pins = pins.concat([{ over: free[0], x: vals[0], y: vals[1] === undefined ? vals[0] : vals[1] }]);
+        commit();
+      }));
+      html('div', 'pin-actions', pinsBar).appendChild(add);
+    }
+    html('div', 'pin-hint', pinsBar).textContent =
+      'Both axes read the same combination; these are the only things they differ in. '
+      + 'A row with the same value on both sides pins that dimension for the whole chart, '
+      + 'and the values offered are the dimension\'s own — not the "shown" list, which '
+      + 'no longer decides anything for a pinned dimension. ＋ on an axis adds another '
+      + 'reading of it: several on one axis become one series each, in their own colour and shape.';
+    const openPins = pinsOpen[plot.id] !== false;
+    const pt = html('button', 'axes-toggle pins-toggle', head);
+    pt.type = 'button';
+    pt.setAttribute('data-plot', String(plot.id));
+    pt.textContent = (openPins ? '▾' : '▸') + '  Pins' + (pins.length > 1 ? ' (' + pins.length + ')' : '');
+    pt.title = 'What the two axes differ in';
+    pt.addEventListener('click', () => { pinsOpen[plot.id] = !openPins; rerender(); });
+    if (openPins) container.appendChild(pinsBar);
+  }
   if (plot.chartType === 'table'
       && anyMetricIgnores(plot, headPlan.seriesDims.concat(headPlan.xDims))) {
     const lab4 = html('label', 'head-toggle', head);
@@ -75,6 +275,18 @@ function renderPlotCard(plot) {
     cb3.addEventListener('change', () => { plot.breakLines = cb3.checked; rerender(); persistPlotsDebounced(); });
     lab3.appendChild(cb3);
     html('span', null, lab3).textContent = 'break lines per group';
+  }
+  // Facets stack by default; a facet dimension with many values draws a page
+  // taller than the screen. Side by side, as many facets sit in the row as
+  // fit, and the rest wrap beneath them.
+  if (headPlan.facetDims.length > 0) {
+    const labF = html('label', 'head-toggle', head);
+    const cbF = document.createElement('input');
+    cbF.type = 'checkbox'; cbF.checked = !!plot.facetsInRow;
+    cbF.title = 'Draw the facet cards side by side, wrapping into rows, instead of one below the other';
+    cbF.addEventListener('change', () => { plot.facetsInRow = cbF.checked; rerender(); persistPlotsDebounced(); });
+    labF.appendChild(cbF);
+    html('span', null, labF).textContent = 'facets in a row';
   }
   // ---- y-axis: scale and bounds -------------------------------------------
   // Only where there is a y-axis to speak of; a matrix and a table have none.
@@ -143,7 +355,20 @@ function renderPlotCard(plot) {
     if (!plot.yAxis) plot.yAxis = { min: null, max: null, scale: 'auto' };
     if (!plot.yAxisRight) plot.yAxisRight = { min: null, max: null, scale: 'auto' };
     const panels = headPlan.metricPanels;
-    if (headPlan.dualAxis) {
+    if (isCorrelation(plot.chartType)) {
+      // One quantity on both axes gets ONE range: two that could be set apart
+      // by hand would break the only claim the 45° line makes. Two quantities
+      // get one each, and the horizontal one borrows the second-axis slot,
+      // which this chart type has no other use for.
+      const ck = correlationKinds(plot, effectiveKind(plot, {}).kind);
+      if (ck.shared) {
+        axisControls(plot.yAxis, 'yAxis', 'Both axes',
+          'One range on both, which is what makes the 45° line 45°.');
+      } else {
+        axisControls(plot.yAxis, 'yAxis', 'Y', 'The vertical axis');
+        axisControls(plot.yAxisRight, 'xAxis', 'X', 'The horizontal axis');
+      }
+    } else if (headPlan.dualAxis) {
       axisControls(plot.yAxis, 'yAxis', 'Y left',
         'The axis the ' + (headPlan.metricKinds[0] || 'first') + ' series are drawn against');
       axisControls(plot.yAxisRight, 'yAxisRight', 'Y right',
@@ -244,49 +469,68 @@ function renderPlotCard(plot) {
 
   const onDimChange = () => { rerender(); persistPlotsDebounced(); };
 
+  // The controls and the chart, in two halves. Stacked they read as one column,
+  // exactly as before; side by side the halves become two, with a divider that
+  // drags -- which is the only way to change a grouping and watch what it does
+  // to the chart rather than scrolling between the two.
+  const body = html('div', 'plot-body', container);
+  const controls = html('div', 'plot-controls', body);
+  const splitter = html('div', 'plot-splitter', body);
+  splitter.setAttribute('data-plot', String(plot.id));
+  splitter.title = 'Drag to give the chart more room';
+  attachSplitter(splitter);
+  const renderCol = html('div', 'plot-render-col', body);
+
   // "Data shown" — Metric gets its own prominent, full-width picker: tell the
   // plot what data it's showing before configuring how everything else groups.
-  const dataShownBlock = html('div', 'config-block data-shown-block', container);
-  const dataShownHead = html('div', 'dim-label', dataShownBlock);
-  dataShownHead.textContent = 'Data shown';
   const plan = computeAxisPlan(plot);
-  const roleNote = html('span', 'role-badge', dataShownHead);
-  roleNote.style.marginLeft = '8px';
-  roleNote.textContent = plan.metricActive ? 'Grouping dimension' : 'Filter';
-  const roleHint = html('span', 'zone-hint', dataShownHead);
-  roleHint.style.marginLeft = '8px';
-  roleHint.textContent = plan.metricActive
-    ? '2+ metrics selected — "Metric" is now a chip in Grouping below; drop it in Panels to combine different scales (e.g. a percentage and a raw count).'
-    : 'Select a 2nd metric to compare two metrics inside one chart.';
-  renderDimIncludedBlock(dataShownBlock, plot, 'metric', onDimChange);
+  const dataShownBlock = html('div', 'config-block data-shown-block', controls);
+  const shownBody = blockBody(dataShownBlock, plot, 'shown', 'Data shown');
+  if (shownBody) {
+    const dataShownHead = html('div', 'dim-label', shownBody);
+    dataShownHead.textContent = 'Data shown';
+    const roleNote = html('span', 'role-badge', dataShownHead);
+    roleNote.style.marginLeft = '8px';
+    roleNote.textContent = plan.metricActive ? 'Grouping dimension' : 'Filter';
+    const roleHint = html('span', 'zone-hint', dataShownHead);
+    roleHint.style.marginLeft = '8px';
+    roleHint.textContent = plan.metricActive
+      ? '2+ metrics selected — "Metric" is now a chip in Grouping below; drop it in Panels to combine different scales (e.g. a percentage and a raw count).'
+      : 'Select a 2nd metric to compare two metrics inside one chart.';
+    renderDimIncludedBlock(shownBody, plot, 'metric', onDimChange);
+  }
 
   // Grouping gets its own full-width block: any number of dims can sit on the
   // X-axis together, so several dimensions compare inside one chart.
-  const groupingBlock = html('div', 'config-block', container);
+  const groupingBlock = html('div', 'config-block', controls);
   groupingBlock.style.marginBottom = '14px';
-  html('h4', null, groupingBlock).textContent = 'Grouping — drag dimensions between zones';
-  const zonesHost = html('div', null, groupingBlock);
-  renderZonesUI(zonesHost, plot, onDimChange);
+  const groupingBody = blockBody(groupingBlock, plot, 'grouping',
+    'Grouping — drag dimensions between zones');
+  if (groupingBody) renderZonesUI(html('div', null, groupingBody), plot, onDimChange);
 
-  const config = html('div', 'plot-config', container);
+  const config = html('div', 'plot-config', controls);
   const dimsBlock = html('div', 'config-block', config);
-  html('h4', null, dimsBlock).textContent = 'Data included per dimension';
-  const dimsGrid = html('div', 'dims-grid', dimsBlock);
-  GROUPABLE_KEYS.forEach(dimKey => renderDimIncludedBlock(dimsGrid, plot, dimKey, onDimChange));
+  const dimsBody = blockBody(dimsBlock, plot, 'included', 'Data included per dimension');
+  if (dimsBody) {
+    const dimsGrid = html('div', 'dims-grid', dimsBody);
+    GROUPABLE_KEYS.forEach(dimKey => renderDimIncludedBlock(dimsGrid, plot, dimKey, onDimChange));
+  }
 
-  const toolbar = html('div', 'toolbar', container);
+  const toolbar = html('div', 'toolbar', renderCol);
   const tblBtn = document.createElement('button'); tblBtn.type = 'button'; tblBtn.className = 'table-toggle'; tblBtn.textContent = 'Show as table';
   toolbar.appendChild(tblBtn);
 
-  const renderArea = html('div', 'plot-render', container);
+  const renderArea = html('div', 'plot-render', renderCol);
   renderArea.id = 'plot-render-' + plot.id;
   plot.__drawnSeries = [];
   renderPlotChart(plot, renderArea);
   // after the chart, because the per-series rows list what was actually drawn --
-  // and because style is the last thing you reach for, not the first
-  renderStyleBlock(container, plot, rerender);
+  // and because style is the last thing you reach for, not the first. Side by
+  // side it joins the other controls instead, where the chart is already in
+  // view beside it.
+  renderStyleBlock(sideBySide() ? controls : renderCol, plot, rerender);
 
-  const tableWrap = html('div', 'table-wrap hidden', container);
+  const tableWrap = html('div', 'table-wrap hidden', renderCol);
   tblBtn.addEventListener('click', () => {
     const showing = !tableWrap.classList.contains('hidden');
     tableWrap.classList.toggle('hidden');
@@ -299,6 +543,9 @@ function renderPlots() {
   const container = document.getElementById('plots');
   if (!container) return;
   container.innerHTML = '';
+  container.classList.toggle('side-by-side', sideBySide());
+  container.classList.toggle('row-layout', rowLayout());
+  applyConfigWidth();
   plots.forEach(plot => {
     const card = html('div', 'plot-card', container);
     card.id = 'plot-card-' + plot.id;
@@ -313,6 +560,9 @@ function renderPlots() {
 // the right thing, and it should not sit between you and the grouping controls.
 const styleOpen = {};
 function renderStyleBlock(container, plot, rerender) {
+  return withPlotSchema(plot, () => drawStyleBlock(container, plot, rerender));
+}
+function drawStyleBlock(container, plot, rerender) {
   if (isGridType(plot.chartType)) return;
   const style = plot.style || (plot.style = defaultPlotStyle());
   const block = html('div', 'config-block style-block', container);
@@ -329,6 +579,9 @@ function renderStyleBlock(container, plot, rerender) {
   // change them, and switch back.
   const drawsLines = plot.chartType === 'lines' || computeAxisPlan(plot).dualAxis;
   const drawsBars = plot.chartType === 'bars' || plot.chartType === 'diverging';
+  // A correlation plot is marks and nothing else, so it wants the point
+  // settings and the per-series shape picker, and none of the line or bar ones.
+  const drawsDots = isCorrelation(plot.chartType);
 
   const body = html('div', 'style-body', block);
   const apply = () => { rerender(); persistPlotsDebounced(); };
@@ -382,24 +635,41 @@ function renderStyleBlock(container, plot, rerender) {
       .concat(BAR_PATTERNS.filter(p => p.key !== 'none').map(p => [p.key, p.label])),
       style.barPattern, v => { style.barPattern = v; }, 'style-pattern');
   }
-  if (drawsBars) {
+  if (drawsBars || drawsDots) {
     const r2b = html('label', 'style-row', body);
-    html('span', 'style-label', r2b).textContent = 'Values';
+    html('span', 'style-label', r2b).textContent = 'Labels';
     const vl = document.createElement('input');
     vl.type = 'checkbox';
     vl.className = 'style-value-labels';
     vl.checked = !!style.valueLabels;
     vl.addEventListener('change', () => { style.valueLabels = vl.checked; apply(); });
     r2b.appendChild(vl);
-    html('span', 'radio-hint', r2b).textContent =
-      'print the number on each bar — the only way to read a bar that is a sliver '
-      + 'next to a much larger one';
+    html('span', 'radio-hint', r2b).textContent = drawsDots
+      ? 'name each dot with the combination it stands for — readable up to a couple '
+        + 'of dozen dots, noise past that'
+      : 'print the number on each bar — the only way to read a bar that is a sliver '
+        + 'next to a much larger one';
   }
-  if (drawsLines) {
+  if (drawsDots) {
+    const r2c = html('label', 'style-row', body);
+    html('span', 'style-label', r2c).textContent = 'Diagonal';
+    const bd = document.createElement('input');
+    bd.type = 'checkbox';
+    bd.className = 'style-diag-band';
+    bd.checked = !!style.diagBand;
+    bd.addEventListener('change', () => { style.diagBand = bd.checked; apply(); });
+    r2c.appendChild(bd);
+    const ck = correlationKinds(plot, effectiveKind(plot, {}).kind);
+    html('span', 'radio-hint', r2c).textContent = ck.shared
+      ? 'shade the ±10% band — where the two readings agree to within a tenth'
+      : 'the axes are different quantities here, so there is no 45° line to band';
+  }
+  if (drawsLines || drawsDots) {
     const r3 = row('Points');
-    pick(r3, [['auto', 'a shape each'], ['none', 'none']]
+    pick(r3, [['auto', 'a shape each']].concat(drawsDots ? [] : [['none', 'none']])
       .concat(MARK_SHAPES.map(m => [m.key, m.label])),
-      style.markers, v => { style.markers = v; }, 'style-markers');
+      style.markers === 'none' && drawsDots ? 'auto' : style.markers,
+      v => { style.markers = v; }, 'style-markers');
     const size = document.createElement('input');
     size.type = 'range'; size.min = '2'; size.max = '8'; size.step = '0.5';
     size.className = 'style-size';
@@ -408,14 +678,16 @@ function renderStyleBlock(container, plot, rerender) {
     size.addEventListener('change', () => { style.markerSize = Number(size.value); apply(); });
     r3.appendChild(size);
 
-    const r4 = row('Lines');
-    const lw = document.createElement('input');
-    lw.type = 'range'; lw.min = '0.5'; lw.max = '5'; lw.step = '0.5';
-    lw.className = 'style-linewidth';
-    lw.value = String(style.lineWidth);
-    lw.title = 'Line width';
-    lw.addEventListener('change', () => { style.lineWidth = Number(lw.value); apply(); });
-    r4.appendChild(lw);
+    if (drawsLines) {
+      const r4 = row('Lines');
+      const lw = document.createElement('input');
+      lw.type = 'range'; lw.min = '0.5'; lw.max = '5'; lw.step = '0.5';
+      lw.className = 'style-linewidth';
+      lw.value = String(style.lineWidth);
+      lw.title = 'Line width';
+      lw.addEventListener('change', () => { style.lineWidth = Number(lw.value); apply(); });
+      r4.appendChild(lw);
+    }
   }
 
   // per-series overrides, listed from what the chart actually drew
@@ -435,7 +707,7 @@ function renderStyleBlock(container, plot, rerender) {
       r.appendChild(col);
       // With two axes a chart draws both kinds of mark at once, so it offers
       // both pickers rather than guessing which side this series is on.
-      if (drawsLines) {
+      if (drawsLines || drawsDots) {
         pick(r, [['', 'auto']].concat(MARK_SHAPES.map(m => [m.key, m.label])),
           ov.shape || '', v => { if (v) ov.shape = v; else delete ov.shape; }, 'style-series-shape');
       }

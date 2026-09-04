@@ -180,6 +180,11 @@ function defaultPlotStyle() {
     markerSize: 3.5,
     lineWidth: 2,
     valueLabels: false,
+    // The band a correlation plot shades either side of its 45° line: where the
+    // two readings agree to within a tenth. On by default because a chart drawn
+    // to answer "did this match that?" may as well say what counts as a match;
+    // it is drawn only where the diagonal is.
+    diagBand: true,
     // 'series' colours by the series entity, which is right when the series is
     // what the reader is comparing. 'metric' colours by which measure a mark
     // shows -- the only way to keep the measures apart when Metric is on the
@@ -203,6 +208,7 @@ function normalisePlotStyle(s) {
     markerSize: num(s.markerSize, d.markerSize, 1.5, 9),
     lineWidth: num(s.lineWidth, d.lineWidth, 0.5, 6),
     valueLabels: !!s.valueLabels,
+    diagBand: s.diagBand === undefined ? d.diagBand : !!s.diagBand,
     colourBy: s.colourBy === 'metric' ? 'metric' : d.colourBy,
     series: (s.series && typeof s.series === 'object') ? s.series : {},
   };

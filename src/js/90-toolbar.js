@@ -21,6 +21,36 @@ function setStatus(msg, undoable) {
   }
 }
 
+// Side by side or stacked. Stored rather than derived: it is a choice about the
+// screen it is being read on, and it should survive a reload of it.
+const LS_SIDE_BY_SIDE = 'viz-side-by-side';
+let sideBySideMode = null;
+function sideBySide() {
+  if (sideBySideMode === null) {
+    try { sideBySideMode = localStorage.getItem(LS_SIDE_BY_SIDE) === '1'; } catch (e) { sideBySideMode = false; }
+  }
+  return sideBySideMode;
+}
+function setSideBySide(on) {
+  sideBySideMode = !!on;
+  try { localStorage.setItem(LS_SIDE_BY_SIDE, on ? '1' : '0'); } catch (e) {}
+}
+
+// Plots in a row, or stacked. Stored for the same reason as the side-by-side
+// choice above: it is about the screen, not about a plot.
+const LS_ROW_LAYOUT = 'viz-row-layout';
+let rowLayoutMode = null;
+function rowLayout() {
+  if (rowLayoutMode === null) {
+    try { rowLayoutMode = localStorage.getItem(LS_ROW_LAYOUT) === '1'; } catch (e) { rowLayoutMode = false; }
+  }
+  return rowLayoutMode;
+}
+function setRowLayout(on) {
+  rowLayoutMode = !!on;
+  try { localStorage.setItem(LS_ROW_LAYOUT, on ? '1' : '0'); } catch (e) {}
+}
+
 function renderBuilderToolbar() {
   const bar = document.getElementById('builder-toolbar');
   if (!bar) return;
@@ -30,35 +60,28 @@ function renderBuilderToolbar() {
   addBtn.addEventListener('click', () => { plots.push(makeDefaultPlot()); renderPlots(); });
   bar.appendChild(addBtn);
 
-  // Layout presets. These replace the old Simple mode, whose three group-by modes
-  // were 383 lines of a second, hardwired renderer; each is now one zone layout.
-  const presets = layoutPresets();
-  if (presets.length) {
-    const wrap = html('span', 'preset-group', bar);
-    html('span', 'preset-label', wrap).textContent = 'Layout';
-    presets.forEach(p => {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'btn small'; b.textContent = p.label;
-      b.title = p.hint;
-      b.addEventListener('click', () => {
-        // A preset rewrites every zone and every included list at once, which
-        // is the largest single change a button on this page can make. It is
-        // exactly what an accidental click should be able to take back.
-        undoSnapshot = serializePlots();
-        const plot = plots[0] || makeDefaultPlot();
-        if (!plots.length) plots.push(plot);
-        plot.zones = normaliseZones(p.zones());
-        Object.keys(plot.included).forEach(k => {
-          if (k === MEASURE_DIM) return;
-          const facet = plot.zones.facet.indexOf(k) !== -1;
-          plot.included[k] = facet ? DIM_BY_KEY[k].values.slice(0, 1) : DIM_BY_KEY[k].values.slice();
-        });
-        renderPlots();
-        setStatus('Plot 1 — ' + p.hint, true);
-      });
-      wrap.appendChild(b);
-    });
-  }
+  // Where the controls sit. Stacked, changing a grouping means scrolling down
+  // to the chart to see what it did; beside it, the chart is in view the whole
+  // time. It is a property of the screen rather than of a plot, so it is one
+  // switch here and it is remembered.
+  const sideBtn = document.createElement('button');
+  sideBtn.type = 'button';
+  sideBtn.className = 'btn small side-by-side-toggle';
+  sideBtn.textContent = sideBySide() ? 'Controls beside the chart' : 'Controls above the chart';
+  sideBtn.title = 'Put the controls in a column next to the chart, with a divider you can drag';
+  sideBtn.setAttribute('aria-pressed', sideBySide() ? 'true' : 'false');
+  sideBtn.addEventListener('click', () => { setSideBySide(!sideBySide()); renderBuilder(); });
+  bar.appendChild(sideBtn);
+
+  const rowBtn = document.createElement('button');
+  rowBtn.type = 'button';
+  rowBtn.className = 'btn small row-layout-toggle';
+  rowBtn.textContent = rowLayout() ? 'Plots stacked' : 'Plots in a row';
+  rowBtn.title = 'Put the plot cards side by side, wrapping into rows, instead of one below the other';
+  rowBtn.setAttribute('aria-pressed', rowLayout() ? 'true' : 'false');
+  rowBtn.addEventListener('click', () => { setRowLayout(!rowLayout()); renderBuilder(); });
+  bar.appendChild(rowBtn);
+
   bar.appendChild(sep());
 
   const nameInput = document.createElement('input'); nameInput.type = 'text'; nameInput.className = 'name-input'; nameInput.placeholder = 'View name';
@@ -98,6 +121,9 @@ function renderBuilderToolbar() {
     if (!name || !readNamedViews()[name]) return;
     const replaced = plots.length;
     undoSnapshot = serializePlots();
+    // A view of one dataset lands synchronously, exactly as before. Only a view
+    // holding plots pinned to datasets that are not in memory waits, and only
+    // for those.
     loadNamedView(name);
     setStatus('Loaded "' + name + '"' + (replaced > 1 ? ' — replaced ' + replaced + ' plots' : ''), true);
   });
@@ -137,7 +163,7 @@ function renderBuilderToolbar() {
         const cfg = JSON.parse(reader.result);
         const replaced = plots.length;
         undoSnapshot = serializePlots();
-        applyConfig(cfg);
+        loadConfig(cfg);
         setStatus('Imported "' + file.name + '"' + (replaced > 1 ? ' — replaced ' + replaced + ' plots' : ''), true);
       }
       catch (err) { alert('Could not read that file as a saved view.'); }

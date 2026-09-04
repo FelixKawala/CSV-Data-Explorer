@@ -40,3 +40,14 @@
 
   /* the number printed on a bar, for when the bar itself is unreadably small */
   .bar-value { font-size: 8.5px; fill: var(--text-secondary); pointer-events: none; }
+
+  /* correlation plot. The diagonal's dash comes from here rather than from a
+     stroke-dasharray attribute on purpose: the TikZ exporter reads a <line>'s
+     dash from the computed style, and only reads the attribute for <polyline>.
+     The band is a flat fill with no opacity for the same kind of reason -- the
+     exporter's polygon branch emits a plain \fill and drops opacity, so a
+     translucent band on screen would export as a solid slab. */
+  .diag-line { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 4 3; }
+  .tol-band { fill: var(--grid); }
+  .dot-label { font-size: 8.5px; fill: var(--text-muted); pointer-events: none; }
+  .axis-title { fill: var(--text-secondary); font-size: 10.5px; }

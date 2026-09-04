@@ -44,9 +44,34 @@
 
   /* ---- plot card ---- */
   .plot-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px 18px; margin-bottom: 18px; }
+  /* several plots in one row: the cards flow into a wrapping grid */
+  #plots.row-layout {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 18px;
+    align-items: start;
+  }
+  #plots.row-layout .plot-card { margin-bottom: 0; min-width: 0; }
+  /* a grid item's min-width:auto refuses to shrink below its content, which
+     pins the track to the card's min-content and wraps every second plot onto
+     its own row; and the charts refuse to shrink too (their svg has
+     max-width: none). Both have to give, or the row never happens. */
+  #plots.row-layout .plot-render,
+  #plots.row-layout .leaf-shell,
+  #plots.row-layout .svg-scroll { min-width: 0; }
+  #plots.row-layout .svg-scroll svg { max-width: 100%; height: auto; }
+  /* when row layout halves the card, the chart column has to give way too:
+     it keeps whatever is left of the card instead of insisting on 320px */
+  #plots.row-layout.side-by-side .plot-body { grid-template-columns: var(--config-w, 360px) 10px minmax(0, 1fr); }
   .plot-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
   .plot-head .plot-title { font-size: 14px; font-weight: 600; margin-right: auto; }
   .plot-head select { font: inherit; font-size: 12.5px; background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+  /* which dataset a plot reads — only shown once there is more than one */
+  .plot-head select.plot-dataset { border-style: dashed; }
+  .plot-dataset-missing {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--div-neg-3);
+  }
   .plot-config { margin-bottom: 14px; }
   .config-block h4 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 0 0 8px; font-weight: 600; }
   .dims-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
@@ -95,6 +120,8 @@
   /* ---- dual list (included values) ---- */
   .dim-block { border: 1px solid var(--border); border-radius: 8px; padding: 8px 9px 9px; }
   .dim-block .dim-label { font-size: 11.5px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .dim-block .dim-label .dim-label-name { flex: 1; }
+  .dim-block .dim-label .chip-mini { font-size: 10px; padding: 1px 7px; }
   .dual-list { display: flex; gap: 8px; }
   .dual-col { flex: 1; min-width: 0; }
   .dual-col .col-label { font-size: 9.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
@@ -219,6 +246,16 @@
   .facet-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px 14px; margin-bottom: 12px; background: var(--page); }
   .facet-card h5 { font-size: 11px; color: var(--text-secondary); margin: 0 0 10px; font-weight: 600; }
   .facet-card .facet-card { background: var(--surface-1); }
+  /* "facets in a row": the top-level facet cards wrap side by side, and each
+     chart gives up its fixed width to fit the card it lands in */
+  .facet-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 12px;
+    align-items: start;
+  }
+  .facet-grid .facet-card { margin-bottom: 0; min-width: 0; }
+  .facet-grid .svg-scroll svg { max-width: 100%; height: auto; }
   .plot-empty { font-size: 12px; color: var(--text-muted); padding: 16px 0; }
 
 /* ---- data tab ---- */
@@ -237,6 +274,19 @@
 .dataset-rename { font-weight: 600; font-size: 13px; }
 .dataset-meta { font-size: 11.5px; color: var(--text-muted); margin-right: auto; }
 .dataset-actions { display: flex; gap: 6px; }
+/* provenance: which files this came from, and how they were read */
+.dataset-files-toggle { font-size: 11px; padding: 1px 6px; }
+.dataset-sources {
+  flex-basis: 100%; order: 9; margin-top: 6px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--page);
+  font-size: 11.5px;
+}
+.dataset-part-name { font-weight: 600; color: var(--text-secondary); margin: 4px 0 2px; }
+.dataset-file { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.dataset-file-name { font-family: ui-monospace, Menlo, monospace; color: var(--text-primary); }
+.dataset-file-path { color: var(--text-muted); font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+.dataset-file-size { color: var(--text-muted); font-size: 11px; }
+.dataset-file-note { color: var(--text-muted); margin-top: 4px; }
 .dataset-pick { margin: 0 6px 0 0; }
 .dataset-hint { font-size: 11px; color: var(--text-muted); padding: 4px 2px; }
 .dataset-combine {
@@ -246,6 +296,10 @@
 }
 .import-review { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface-1); margin-bottom: 14px; }
 .import-review h4 { font-size: 13px; margin: 0 0 8px; }
+/* Editing an existing dataset rather than reviewing a new one: the screen is
+   the same, and the thing it will overwrite is not, so it says which it is
+   without moving anything. */
+.import-review.import-edit { border-color: var(--series-base); }
 .import-summary { font-size: 11.5px; color: var(--text-muted); margin-bottom: 10px; }
 .import-warn { font-size: 12px; color: var(--div-neg-3); margin: 6px 0; }
 .import-note { font-size: 11.5px; color: var(--text-muted); margin: 4px 0; }
@@ -269,8 +323,8 @@
 .import-table .empty-label { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; }
 .import-table .empty-label .name-input { width: 74px; min-width: 0; }
 
-/* reshape: pulling dimensions out of column names and file paths */
-.import-reshape, .import-path {
+/* reshape: pulling dimensions out of column names, column values and file paths */
+.import-reshape, .import-split, .import-path {
   margin: 12px 0; padding: 10px 12px;
   border: 1px solid var(--border); border-radius: 10px; background: var(--page);
 }
@@ -338,8 +392,6 @@
   border: 1px solid var(--border); border-radius: 6px;
   background: var(--page); color: var(--text-primary);
 }
-.preset-group { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; }
-.preset-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 .derive-holder { flex-basis: 100%; }
 .derive-form { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--page); margin-top: 8px; }
 .derive-form .radio-row { flex-wrap: wrap; }
@@ -376,6 +428,33 @@
 .formula-defined button { font-size: 12px; }
 .head-note { font-size: 11px; color: var(--text-muted); }
 
+/* ---- folding a config block, and the controls beside the chart ---- */
+.block-toggle {
+  display: block; width: 100%; text-align: left;
+  font: inherit; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-muted); font-weight: 600;
+  background: none; border: 0; padding: 0 0 8px; margin: 0; cursor: pointer;
+}
+.block-toggle:hover { color: var(--text-primary); }
+/* the block's own heading is inside the body, so a folded block is its title */
+.block-body > .dim-label:first-child { margin-top: -2px; }
+
+.plot-splitter { display: none; }
+#plots.side-by-side .plot-body {
+  display: grid;
+  grid-template-columns: var(--config-w, 360px) 10px minmax(320px, 1fr);
+  align-items: start;
+}
+#plots.side-by-side .plot-controls { min-width: 0; max-height: 80vh; overflow: auto; padding-right: 4px; }
+#plots.side-by-side .plot-render-col { min-width: 0; }
+#plots.side-by-side .plot-splitter {
+  display: block; align-self: stretch; width: 4px; margin: 0 3px; min-height: 60px;
+  border-radius: 3px; background: var(--border); cursor: col-resize;
+}
+#plots.side-by-side .plot-splitter:hover { background: var(--series-base); }
+body.dragging-splitter { cursor: col-resize; user-select: none; }
+.side-by-side-toggle[aria-pressed="true"] { border-color: var(--series-base); color: var(--text-primary); }
+
 /* ---- the plot's axis strip ---- */
 .plot-axes-bar {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px;
@@ -388,8 +467,95 @@
   background: var(--page); border: 1px solid var(--border); border-radius: 7px; padding: 4px 9px;
 }
 .axes-toggle:hover { color: var(--text-primary); border-color: var(--axis); }
+
+/* ---- what a correlation plot's two axes differ in ---- */
+.plot-pins-bar {
+  padding: 8px 10px; margin: -4px 0 12px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--page);
+}
+.pin-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin-bottom: 6px;
+}
+.pin-row:last-of-type { margin-bottom: 0; }
+.pin-row .mini-label { color: var(--text-muted); font-size: 11px; }
+.pin-row select { font-size: 11.5px; }
+.pin-axis { display: inline-flex; align-items: center; gap: 4px; }
+.pin-axis .pin-remove { padding: 0 4px; font-size: 12px; color: var(--text-muted); }
+.pin-axis .pin-add-val { padding: 0 6px; }
+.pin-remove { color: var(--text-muted); }
+.pin-actions { margin-top: 4px; }
+.pin-hint { font-size: 11px; color: var(--text-muted); margin-top: 8px; max-width: 62ch; }
+.zone-chip .order-num.pinned { border-color: var(--axis); color: var(--text-secondary); }
 .export-group {
   padding-left: 10px; border-left: 1px solid var(--border);
 }
 .card-actions { padding-left: 10px; border-left: 1px solid var(--border); }
 .axis-secondary { fill: var(--text-muted); }
+
+/* ---- preselecting rows and columns of an import ---- */
+.import-preselect { margin-bottom: 10px; }
+.preselect-toggle {
+  display: flex; align-items: baseline; gap: 6px; width: 100%; text-align: left;
+  font: inherit; font-size: 12px; color: var(--text-primary);
+  background: none; border: 0; padding: 0; margin: 0 0 4px; cursor: pointer;
+}
+.preselect-arrow { color: var(--text-muted); }
+.preselect-summary { color: var(--text-muted); font-size: 11px; }
+.preselect-file { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.preselect-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+.preselect-note { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; max-width: 78ch; }
+.preselect-grid-host { margin-top: 4px; }
+.preselect-grid {
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  background: var(--page);
+}
+.pg-scroll {
+  overflow: auto; max-height: 340px;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px;
+  cursor: default;
+}
+.pg-inner { position: relative; }
+.pg-head {
+  position: sticky; top: 0; z-index: 4; display: flex;
+  background: var(--surface-1); border-bottom: 1px solid var(--border);
+}
+.pg-corner {
+  position: sticky; left: 0; z-index: 6; flex: none;
+  width: 56px; min-width: 56px; padding: 4px 8px;
+  background: var(--surface-1); border-right: 1px solid var(--grid);
+  color: var(--text-muted); text-align: right;
+}
+.pg-col, .pg-cell, .pg-gut {
+  flex: none; box-sizing: border-box; height: 24px; line-height: 24px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pg-col {
+  width: 130px; min-width: 130px; padding: 0 8px; cursor: ew-resize;
+  border-right: 1px solid var(--grid);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--text-secondary); font-weight: 600;
+}
+.pg-row {
+  position: absolute; left: 0; display: flex; width: 100%;
+  border-bottom: 1px solid var(--grid);
+}
+.pg-gut {
+  position: sticky; left: 0; z-index: 2;
+  width: 56px; min-width: 56px; padding: 0 8px; cursor: ns-resize;
+  background: var(--surface-1); border-right: 1px solid var(--grid);
+  color: var(--text-muted); text-align: right; user-select: none;
+}
+.pg-cell {
+  width: 130px; min-width: 130px; padding: 0 8px;
+  background: var(--surface-1);
+}
+.pg-col.off, .pg-cell.off, .pg-gut.off { opacity: .35; }
+/* An excluded row gets a greyed backdrop as well as the fade, so it reads as
+   excluded even where a glance sees past the opacity. */
+.pg-row.off .pg-cell, .pg-row.off .pg-gut {
+  background: color-mix(in srgb, var(--text-muted) 10%, var(--surface-1));
+}
+.pg-col:hover, .pg-gut:hover { background: var(--chip-bg); }
+.pg-gut.off, .pg-col.off { color: var(--text-muted); }
+body.pg-dragging { user-select: none; }

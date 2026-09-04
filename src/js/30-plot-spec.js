@@ -61,9 +61,15 @@ const AXIS_ZONE_KEYS = ZONE_KEYS.filter(k => k !== OFF_ZONE);
 // correct way to read them together.
 const CHART_TYPES = [
   ['bars', 'Bar chart'], ['lines', 'Line chart'],
-  ['diverging', 'Diverging bars'], ['matrix', 'Matrix'], ['table', 'Table'],
+  ['diverging', 'Diverging bars'], ['correlation', 'Correlation plot'],
+  ['matrix', 'Matrix'], ['table', 'Table'],
 ];
 function isCartesian(t) { return t === 'bars' || t === 'lines'; }
+// Both of its axes are quantities, so it is not `isCartesian` either: that means
+// "categories along the bottom, a measure up the side", and here the bottom is a
+// measure too. It has no second y-axis for the same reason -- the second axis is
+// already in use as the first one.
+function isCorrelation(t) { return t === 'correlation'; }
 // A diverging chart is cartesian too, just laid on its side: its value axis is
 // horizontal. That is enough to carry a second scale, so it is offered one --
 // but it is not `isCartesian`, which elsewhere means "has a vertical y-axis".
@@ -74,7 +80,21 @@ function isGridType(t) { return t === 'matrix' || t === 'table'; }
 const PANEL_ZONE = { key: 'panel', label: 'Panels', hint: 'one stacked sub-chart per metric over a shared x-axis — the way to combine a percentage and a raw count' };
 const METRIC_ZONE_KEYS = AXIS_ZONE_KEYS.concat([PANEL_ZONE.key]);
 
-function makeDefaultPlot() {
+// A plot of the page's dataset, or of a named one. A plot with no id follows
+// the page, which is what every plot made before this does -- so the id is set
+// only when one is asked for, and the shape of an ordinary plot is unchanged.
+function makeDefaultPlot(datasetId) {
+  const ds = datasetId ? loadedDataset(datasetId) : DS;
+  const plot = withDataset(ds, () => defaultPlotHere());
+  if (datasetId) {
+    plot.datasetId = datasetId;
+    // kept beside the id so a plot can still name its dataset in a message
+    // after that dataset has been deleted
+    plot.datasetName = ds ? ds.name : null;
+  }
+  return plot;
+}
+function defaultPlotHere() {
   const zones = normaliseZones(defaultZones());
   const included = {};
   DIM_KEYS.forEach(k => { included[k] = defaultIncluded(k, zones); });
@@ -105,6 +125,15 @@ function makeDefaultPlot() {
     // missing. Naming a dimension instead makes the line a statement about that
     // dimension, and a missing point a gap it steps over rather than an end.
     lineAlong: null,
+    // What the two axes of a correlation plot differ in: an ordered list of
+    // { over, x, y }, where `over` may be any dimension INCLUDING Metric --
+    // Metric is a dimension here like any other, which is what makes "one
+    // measure against another" the same control as "one run against another"
+    // rather than a special case. One row is the normal chart; a second lets
+    // the axes differ in two things at once (the target measure at Run 1
+    // against the result measure at Run 2). A row with x === y pins that
+    // dimension to one value for the whole chart.
+    pins: [],
     collapseRepeats: true,
     zones,
     metricZone: 'series',
@@ -112,9 +141,18 @@ function makeDefaultPlot() {
     included,
   };
 }
+// The plot's own lists, not the current dataset's dimensions.
+//
+// This walked DIM_KEYS and indexed `inc[k]` unguarded, which is a copy of the
+// plot filtered through whatever schema happened to be live -- and a throw when
+// the plot has not got one of those keys. It matters most from the autosave,
+// which runs on a 300ms timer, outside any render and inside no try: a plot
+// carrying anything but exactly today's dimensions took the page down from a
+// callback with nothing to catch it. Serialising a plot now reads no schema at
+// all, which is what lets a snapshot outlive the dataset it was taken under.
 function cloneIncluded(inc) {
   const out = {};
-  DIM_KEYS.forEach(k => { out[k] = inc[k].slice(); });
+  Object.keys(inc || {}).forEach(k => { out[k] = (inc[k] || []).slice(); });
   return out;
 }
 function cloneAxisMap(by) {
@@ -131,13 +169,88 @@ function normaliseZones(z) {
   return out;
 }
 function cloneZones(z) { return normaliseZones(z); }
+
+// ---- correlation pins -------------------------------------------------------
+// Per-row copies, not a slice: sharing the row objects would let a duplicated
+// plot edit the plot it was duplicated from, and would make the undo snapshot a
+// picture of the state it is meant to restore.
+function clonePins(list) {
+  return (list || []).map(r => ({
+    over: r.over,
+    x: Array.isArray(r.x) ? r.x.slice() : r.x,
+    y: Array.isArray(r.y) ? r.y.slice() : r.y,
+  }));
+}
+// A pin names a dimension and the values of it the two axes read: one on each
+// side, or several -- several let one axis hold more than one reading, each
+// drawn as its own series. A saved view outlives the file it was drawn against:
+// all three may be gone in another dataset. A row that no longer resolves is
+// dropped rather than kept -- kept, it would read the data at a value that does
+// not exist, which is null at every tuple: an empty chart with nothing on it to
+// say why. The same reasoning as `lineAlong`.
+//
+// The values are checked against the dimension's DOMAIN rather than against the
+// plot's included list. A pinned dimension has been taken off the chart, and the
+// pin is now what says which of its values are read -- and the default layout
+// starts a facet dimension at one included value, so requiring inclusion would
+// refuse the first pin anyone tries.
+const PIN_LIMIT = 3;
+function normalisePins(list) {
+  if (!Array.isArray(list)) return [];
+  const seen = {};
+  const out = [];
+  list.forEach(r => {
+    if (!r || typeof r !== 'object' || out.length >= PIN_LIMIT) return;
+    const dim = DIM_BY_KEY[r.over];
+    if (!dim || seen[r.over]) return;
+    const normVal = v => {
+      if (Array.isArray(v)) {
+        const f = v.filter(x => dim.values.indexOf(x) !== -1);
+        return f.length ? f : null;
+      }
+      return dim.values.indexOf(v) !== -1 ? v : null;
+    };
+    const x = normVal(r.x);
+    const y = normVal(r.y);
+    if (x === null || y === null) return;
+    seen[r.over] = true;
+    out.push({ over: r.over, x: x, y: y });
+  });
+  return out;
+}
+// Dimensions worth differing in: anything with two values to tell apart. Metric
+// counts, and is offered last so a dimension of the data is proposed first --
+// "this run against that one" is the commoner question than "this measure
+// against that one", and the measure pair is one select away either way.
+function pinnableDims() {
+  return DIM_KEYS.filter(k => k !== MEASURE_DIM && DIM_BY_KEY[k] && DIM_BY_KEY[k].values.length >= 2)
+    .concat(DIM_BY_KEY[MEASURE_DIM] && DIM_BY_KEY[MEASURE_DIM].values.length >= 2 ? [MEASURE_DIM] : []);
+}
+// The obvious first question, so switching to this chart type draws something
+// rather than an empty frame and an instruction.
+function defaultPins() {
+  const k = pinnableDims()[0];
+  if (!k) return [];
+  const v = DIM_BY_KEY[k].values;
+  return [{ over: k, x: v[0], y: v[1] }];
+}
+
 function clonePlot(p) {
+  return withPlotSchema(p, () => copyPlot(p));
+}
+function copyPlot(p) {
+  const out = copyPlotFields(p);
+  if (p.datasetId) { out.datasetId = p.datasetId; out.datasetName = p.datasetName || null; }
+  return out;
+}
+function copyPlotFields(p) {
   return {
     id: plotIdSeq++,
     chartType: p.chartType,
     repeatPanelAxis: p.repeatPanelAxis,
     dualAxis: p.dualAxis,
     forceOneAxis: p.forceOneAxis,
+    facetsInRow: !!p.facetsInRow,
     breakLines: p.breakLines,
     collapseRepeats: p.collapseRepeats,
     yAxis: Object.assign({ min: null, max: null, scale: 'auto' }, p.yAxis),
@@ -145,6 +258,7 @@ function clonePlot(p) {
     yAxisBy: cloneAxisMap(p.yAxisBy),
     style: normalisePlotStyle(p.style),
     lineAlong: p.lineAlong || null,
+    pins: clonePins(p.pins),
     metricBreaks: (p.metricBreaks || []).slice(),
     zones: cloneZones(p.zones),
     metricZone: p.metricZone,
@@ -157,67 +271,3 @@ let plots = [];
 // A default layout can only be chosen once the dimensions are known, so plots are
 // (re)built when a dataset is adopted rather than at load.
 function resetPlots() { plots = hasDataset() ? [makeDefaultPlot()] : []; }
-
-// Named zone layouts, offered in the toolbar. Derived from whatever dimensions
-// exist rather than hardcoded, so they mean something for an imported CSV too.
-//
-// Named AFTER those dimensions, too. "Nested", "Faceted" and "Side by side"
-// described the shape of the result and left you to work out which of your
-// dimensions would end up where -- which is the only thing you actually want to
-// know before pressing one. Every label now says what moves.
-function zoneSummary(z) {
-  const names = list => list.map(k => (DIM_BY_KEY[k] ? DIM_BY_KEY[k].label : k)).join(' × ');
-  const parts = [];
-  if (z.x && z.x.length) parts.push('x-axis: ' + names(z.x));
-  if (z.series && z.series.length) parts.push('colour: ' + names(z.series));
-  if (z.facet && z.facet.length) parts.push('one chart per ' + names(z.facet));
-  if (z[OFF_ZONE] && z[OFF_ZONE].length) parts.push('averaged over ' + names(z[OFF_ZONE]));
-  return parts.join(' · ');
-}
-
-function layoutPresets() {
-  const g = GROUPABLE_KEYS.slice();
-  if (g.length < 2) return [];
-  const nameOf = k => (DIM_BY_KEY[k] ? DIM_BY_KEY[k].label : k);
-  const first = g[0];
-  const last = g[g.length - 1];
-  const middle = g.slice(1, -1);
-  const out = [
-    {
-      key: 'default',
-      label: 'Default',
-      zones: defaultZones,
-    },
-    {
-      key: 'nested',
-      label: 'Colour by ' + nameOf(last),
-      zones: () => ({ x: g.slice(0, -1), series: [last], facet: [] }),
-    },
-    {
-      key: 'faceted',
-      label: 'One chart per ' + nameOf(first),
-      zones: () => ({ x: middle.length ? middle : [last], series: middle.length ? [last] : [], facet: [first] }),
-    },
-  ];
-  if (g.length >= 3) {
-    out.push({
-      key: 'sidebyside',
-      label: 'Colour by ' + nameOf(first),
-      zones: () => ({ x: g.slice(1), series: [first], facet: [] }),
-    });
-  }
-  // Presets collide: with three dimensions the default layout IS "one chart per
-  // the first", and two buttons that do the same thing are worse than one. The
-  // test is what they produce, not what they are called -- the same layout
-  // under two names is the same button twice.
-  const seen = {};
-  const uniq = out.filter(p => {
-    const z = p.zones();
-    const sig = ZONE_KEYS.map(k => k + ':' + ((z[k] || []).join(','))).join('|');
-    if (seen[sig]) return false;
-    seen[sig] = true;
-    p.hint = zoneSummary(z);
-    return true;
-  });
-  return uniq;
-}

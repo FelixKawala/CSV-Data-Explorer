@@ -47,7 +47,7 @@ console.log('\n=== 1. The unicode that broke pdflatex is gone ===');
 
 console.log('\n=== 2. Every chart type exports pure ASCII ===');
 {
-  for (const t of ['bars', 'lines', 'diverging', 'matrix', 'table']) {
+  for (const t of ['bars', 'lines', 'diverging', 'correlation', 'matrix', 'table']) {
     const { w, d } = boot();
     if (t === 'diverging') { rm(d, 'Rate A'); add(d, 'Δ Count A (Tuned vs Base)'); }
     setType(w, d, t);

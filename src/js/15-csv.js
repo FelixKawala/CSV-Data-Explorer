@@ -138,6 +138,14 @@ function profileColumn(name, values) {
 // that case better than the name does.
 const MEASURE_NAME_RE = /rate|ratio|pct|percent|count|latency|throughput|bandwidth|score|mean|median|avg|hits|misses/i;
 function suggestRole(p) {
+  // A column with no value in any row is neither. Proposed as a dimension -- as
+  // every non-numeric column was -- it becomes a real dimension with one empty
+  // value, which then takes a zone, an axis band and a chip with nothing written
+  // on it. A file with several (a trailing comma on every line makes one; so do
+  // the placeholder columns an exporter leaves behind) filled the default layout
+  // with them and pushed the column that mattered into Facets, so the first
+  // thing seen was one bar.
+  if (!p.filled) return 'ignore';
   if (!p.numeric) return 'dimension';
   if (p.written) return 'measure';                 // a decimal point settles it
   if (MEASURE_NAME_RE.test(p.name)) return 'measure';

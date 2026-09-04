@@ -98,7 +98,7 @@ console.log('\n=== 4. Export at panel and facet level, captioned ===');
 
 console.log('\n=== 5. Every chart type exports ===');
 {
-  ['bars', 'lines', 'diverging', 'matrix'].forEach(type => {
+  ['bars', 'lines', 'diverging', 'correlation', 'matrix'].forEach(type => {
     const { w, d } = boot();
     if (type === 'diverging') { rm(d, 'Rate A'); add(d, 'Δ Rate A (Tuned−Base)'); }
     setType(w, d, type);

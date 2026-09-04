@@ -159,6 +159,121 @@ dev2,256,tuned,60.1,7900000
     w.close();
   }
 
+  console.log('\n=== 7. A column that is empty in every row is neither ===');
+  {
+    // A trailing comma on every line makes one of these, and a tool that writes
+    // placeholder columns makes several. Proposed as dimensions -- as every
+    // non-numeric column was -- they became real dimensions with one empty
+    // value each, filled the default layout, and pushed the column that
+    // mattered into Facets: the first thing seen was a single bar.
+    const { w, d } = boot();
+    pick(w, [{ name: 'gaps.csv', text: 'app,rate,spare1,spare2\nA,1,,\nB,2,,\nC,3,,\n' }]);
+    await wait(60);
+    ok(colRow(d, 'spare1').querySelectorAll('select')[0].value === 'ignore',
+       'an empty column is proposed as Ignore',
+       colRow(d, 'spare1').querySelectorAll('select')[0].value);
+    ok(/empty in every row/.test(colRow(d, 'spare2').querySelector('.col-profile').textContent),
+       'and says why rather than reporting "0 distinct"',
+       colRow(d, 'spare2').querySelector('.col-profile').textContent);
+    ok(colRow(d, 'app').querySelectorAll('select')[0].value === 'dimension',
+       'the column that does have values is still a dimension');
+    ok(/1 dimensions × 1 measures/.test(d.querySelector('.import-outcome').textContent),
+       'so the shape counts only what is there', d.querySelector('.import-outcome').textContent);
+    importBtn(d).click();
+    await wait(60);
+    ok(w.eval('DS.dims.map(x => x.key).join(",")') === 'app',
+       'and the dataset has one dimension, not three',
+       w.eval('DS.dims.map(x => x.key).join(",")'));
+    ok(d.querySelectorAll('#plots rect.bar').length === 3,
+       'with a bar per row rather than one bar for everything',
+       d.querySelectorAll('#plots rect.bar').length);
+    w.close();
+  }
+
+  console.log('\n=== 8. The name typed in the review is the name it is stored under ===');
+  {
+    // It was read only when several files were being unioned, so for the
+    // commonest import of all -- one file -- the field did nothing and the
+    // dataset arrived called after the file, to be renamed afterwards.
+    const { w, d } = boot();
+    pick(w, [{ name: 'collected_runs_2026_03_final.csv', text: TIDY }]);
+    await wait(60);
+    const nameInput = d.getElementById('import-name');
+    ok(!!nameInput && nameInput.value === 'collected_runs_2026_03_final',
+       'the field starts at the file it came from', nameInput && nameInput.value);
+    nameInput.value = 'Sleep trick, March';
+    nameInput.dispatchEvent(new w.Event('input'));
+    importBtn(d).click();
+    await wait(80);
+    const recs = JSON.parse(await w.eval('STORE.list().then(r => JSON.stringify(r))'));
+    ok(recs.length === 1 && recs[0].name === 'Sleep trick, March',
+       'and one file is stored under the name that was typed', recs[0] && recs[0].name);
+    ok(w.eval('DS.name') === 'Sleep trick, March', 'which is what the page is showing',
+       w.eval('DS.name'));
+    ok(recs[0].sources[0].filename === 'collected_runs_2026_03_final.csv',
+       'while the file it came from is still recorded as itself',
+       recs[0].sources[0].filename);
+    w.close();
+  }
+
+  console.log('\n=== 9. A stored dataset says when it arrived and where from ===');
+  {
+    // The name is the first thing changed after an import, and it is the name
+    // that said which file this was. So the card keeps the provenance.
+    const { w, d } = boot();
+    const input = d.getElementById('csv-input');
+    const file = new w.File([TIDY], 'results.csv', { type: 'text/csv' });
+    Object.defineProperty(file, 'webkitRelativePath', { value: 'runs/2026-03/results.csv', configurable: true });
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new w.Event('change'));
+    await wait(60);
+    d.getElementById('import-name').value = 'March';
+    d.getElementById('import-name').dispatchEvent(new w.Event('input'));
+    importBtn(d).click();
+    await wait(80);
+    const meta = d.querySelector('.dataset-meta').textContent;
+    ok(/imported \d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(meta),
+       'the card says when, in an order that reads the same everywhere', meta);
+    ok(!d.querySelector('.dataset-sources'), 'the files are not in the way until asked for');
+    d.querySelector('.dataset-files-toggle').click();
+    await wait(40);
+    const box = d.querySelector('.dataset-sources');
+    ok(!!box, 'and one click shows them');
+    ok(box.querySelector('.dataset-file-name').textContent === 'results.csv',
+       'naming the file', box.querySelector('.dataset-file-name').textContent);
+    ok(box.querySelector('.dataset-file-path').textContent === 'runs/2026-03/results.csv',
+       'and the path it came from, which is what tells six files called results.csv apart',
+       box.querySelector('.dataset-file-path').textContent);
+    ok(/\d+ KB/.test(box.textContent), 'with its size', box.textContent.slice(0, 80));
+    d.querySelector('.dataset-files-toggle').click();
+    await wait(40);
+    ok(!d.querySelector('.dataset-sources'), 'and it closes again');
+    w.close();
+  }
+
+  console.log('\n=== 10. …including what the recipe did to those files ===');
+  {
+    const { w, d } = boot();
+    pick(w, [{ name: 'wide.csv', text: 'app,2080c512,2080c512kbk\nA,1,2\nB,3,4\n' }]);
+    await wait(60);
+    const cb = d.getElementById('melt-enable');
+    cb.checked = true; cb.dispatchEvent(new w.Event('change'));
+    await wait(30);
+    const pat = d.getElementById('melt-pattern');
+    pat.value = '{device:d}c{threads:d}{variant}';
+    pat.dispatchEvent(new w.Event('input'));
+    await wait(240);
+    importBtn(d).click();
+    await wait(80);
+    d.querySelector('.dataset-files-toggle').click();
+    await wait(40);
+    ok(/column names split by \{device:d\}c\{threads:d\}\{variant\}/.test(
+      d.querySelector('.dataset-sources').textContent),
+       'the reshape is spelled out beside the file it was applied to',
+       d.querySelector('.dataset-sources').textContent);
+    w.close();
+  }
+
   console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
   process.exit(failures === 0 ? 0 : 1);
 })();

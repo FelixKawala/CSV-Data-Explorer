@@ -56,7 +56,7 @@ console.log('\n=== 2. Table plot type ===');
   // the chart-type select specifically -- the plot head has other selects now
   const opts = Array.from(d.querySelectorAll('#plots .plot-head select')[0].querySelectorAll('option'))
     .map(o => o.value);
-  ok(opts.join(',') === 'bars,lines,diverging,matrix,table', 'Table is offered as a plot type', opts.join(','));
+  ok(opts.join(',') === 'bars,lines,diverging,correlation,matrix,table', 'Table is offered as a plot type', opts.join(','));
   setType(w, d, 'table');
   ok(!!tbl(d), 'a table renders');
   ok(d.querySelector('#plots .zone[data-zone="x"] .zone-name').textContent === 'Columns', 'the X zone is called Columns');

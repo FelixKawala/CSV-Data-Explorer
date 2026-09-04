@@ -120,7 +120,7 @@ console.log('\n=== 4. Excluding a value excludes it from the average too ===');
   const before = w.eval(read);
   // drop one device from Shown
   const block = Array.from(d.querySelectorAll('#plots .dim-block'))
-    .find(b => b.querySelector('.dim-label').textContent === 'Device');
+    .find(b => b.querySelector('.dim-label-name').textContent === 'Device');
   ok(/Not used in this plot/.test(block.textContent), 'the value list says what it now decides');
   Array.from(block.querySelectorAll('.dual-col')[0].querySelectorAll('.dnd-chip'))
     .find(c => c.textContent.indexOf(spot.have[0]) !== -1).click();

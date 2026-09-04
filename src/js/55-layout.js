@@ -21,6 +21,9 @@ function scrollWrap(container, svg, w, h, spec) {
 // the global setting still reads 'none'; keying off the global setting drew a
 // plain square for it and made the legend disagree with the chart.
 function legendMode(sVals, style, chartType) {
+  // A correlation plot is nothing but marks, so its key is a mark -- and it
+  // ignores `markers: 'none'`, which would leave it with nothing drawn at all.
+  if (chartType === 'correlation') return 'mark';
   const asLines = chartType === 'lines';
   if (asLines) {
     return (style && style.markers === 'none') ? 'flat' : 'mark';
@@ -154,6 +157,23 @@ function drawXAxis(plotG, xVals, xDims, lay, plotH, showX) {
         .textContent = run.label;
     });
   }
+}
+
+// The x-axis of a chart whose horizontal position is a QUANTITY rather than a
+// category. drawXAxis above labels groups; this labels values, and there was no
+// renderer for it because until the correlation plot no chart had one.
+//
+// `sc` is a scale built against plotW rather than plotH. makeYScale measures its
+// pixels downward from the length it is given, so a caller reading it sideways
+// subtracts -- which is what `plotW - sc.y(v)` does here and in the leaf.
+function drawXValueAxis(plotG, sc, plotW, plotH) {
+  sc.ticks.forEach(t => {
+    const tx = plotW - sc.y(t);
+    el('line', { class: 'grid-line', x1: tx, x2: tx, y1: 0, y2: plotH }, plotG);
+    el('text', { class: 'axis-label', x: tx, y: plotH + 14, 'text-anchor': 'middle' }, plotG)
+      .textContent = sc.tickLabel(t);
+  });
+  el('line', { class: 'baseline', x1: 0, x2: plotW, y1: plotH, y2: plotH }, plotG);
 }
 
 // Anything the scale had to compromise on, said on the chart rather than

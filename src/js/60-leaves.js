@@ -803,6 +803,201 @@ function renderMatrixLeaf(container, spec) {
   if (spec.showLegend !== false) matrixScaleLegend(container, kind, maxVal, maxAbs);
 }
 
+// ---- correlation leaf -------------------------------------------------------
+// One dot per remaining tuple, read twice: X and Y are the same data at the two
+// values the pins name. A dot above the diagonal is a tuple whose Y reading is
+// the larger, which is the question the chart exists to answer -- "did the
+// second run beat the first?" -- and it only asks that question when both axes
+// are the same quantity. With a rate against a count "above the line" means
+// nothing, so the line is not drawn and the chart says so rather than leaving a
+// reader to wonder where it went.
+function renderCorrelationLeaf(container, spec) {
+  const pts = spec.points || [];
+  const style = spec.style || defaultPlotStyle();
+  if (!(spec.pins || []).length) {
+    html('div', 'plot-empty', container).textContent =
+      'Nothing to correlate yet — open Pins above and say what the two axes differ in.';
+    return;
+  }
+  if (!pts.length) {
+    html('div', 'plot-empty', container).textContent =
+      'No combination has a value on both axes, so there is no dot to draw.';
+    return;
+  }
+
+  const shared = !!spec.sharedScale;
+  // Square when the axes share a range: one unit has to be the same number of
+  // pixels each way, or the 45 degree line is 45 degrees only by coincidence.
+  const plotW = shared ? 300 : 380;
+  const plotH = shared ? 300 : 260;
+  const marginL = 54, marginR = 14, marginT = 12, marginB = 56;
+  const w = plotW + marginL + marginR, h = plotH + marginT + marginB;
+
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const both = xs.concat(ys);
+  // makeYScale maps a value to a pixel measured DOWNWARD from the length it is
+  // given. Building the horizontal one against plotW and subtracting turns it
+  // round, and reuses its log handling, its ticks, its clamp and its
+  // out-of-range count rather than growing a second copy of all four.
+  const scY = makeYScale(spec.yKind, shared ? both : ys, plotH, spec.yAxis);
+  const scX = makeYScale(spec.xKind, shared ? both : xs, plotW, spec.xAxis);
+  const px = v => plotW - scX.clamp(scX.y(v));
+  const py = v => scY.clamp(scY.y(v));
+
+  const svg = el('svg', { viewBox: '0 0 ' + w + ' ' + h });
+  const plotG = el('g', { transform: 'translate(' + marginL + ',' + marginT + ')' }, svg);
+
+  drawYAxis(plotG, scY, plotW);
+  drawXValueAxis(plotG, scX, plotW, plotH);
+
+  // The band goes under everything. A polygon rather than a path because those
+  // are the primitives every exporter here walks, and sampled rather than
+  // solved because sampling clips itself against the frame through the scale's
+  // own clamp -- and is right on a log axis, where a tenth either side is a
+  // constant offset, as well as on a linear one, where it is not.
+  if (spec.diagonal && style.diagBand) {
+    const lo = Math.min.apply(null, both), hi = Math.max.apply(null, both);
+    const up = [], dn = [];
+    for (let i = 0; i <= 24; i++) {
+      const v = lo + (hi - lo) * (i / 24);
+      const d = Math.abs(v) * 0.1;
+      up.push([px(v), py(v + d)]);
+      dn.push([px(v), py(v - d)]);
+    }
+    const ring = up.concat(dn.reverse());
+    if (ring.every(p => isFinite(p[0]) && isFinite(p[1]))) {
+      el('polygon', { class: 'tol-band',
+        points: ring.map(p => round2(p[0]) + ',' + round2(p[1])).join(' ') }, plotG);
+    }
+  }
+  // y = x. With one scale on both axes and a square frame, px(v) + py(v) is
+  // plotW for every v, so the line is the frame's anti-diagonal -- no
+  // arithmetic on the bounds, and nothing to get wrong on a log axis.
+  if (spec.diagonal) {
+    el('line', { class: 'diag-line', x1: 0, y1: plotH, x2: plotW, y2: 0 }, plotG);
+  }
+
+  const colourFor = metricColourFor(spec);
+  const r = style.markerSize || 3.5;
+  pts.forEach(p => {
+    const cx = px(p.x), cy = py(p.y);
+    const dot = drawMark(plotG, p.sv.shape || 'circle', cx, cy, r,
+      { fill: colourFor ? colourFor(p.sv, p.xv) : p.sv.color });
+    const tip = [p.label,
+      spec.xAxisLabel + ' — ' + formatValue(spec.xKind, p.x),
+      spec.yAxisLabel + ' — ' + formatValue(spec.yKind, p.y)];
+    if (shared && p.x) tip.push('Y/X = ' + round3(p.y / p.x));
+    dot.addEventListener('mousemove', e => showTip(e, tip));
+    dot.addEventListener('mouseleave', hideTip);
+    if (style.valueLabels) {
+      el('text', { class: 'dot-label', x: cx + r + 3, y: cy - r - 2 }, plotG).textContent = p.label;
+    }
+  });
+
+  // No other leaf names its axes, and this one cannot do without: "the rate at
+  // kbk" against "the rate at tapas" is the entire statement of the chart.
+  el('text', { class: 'axis-title', x: plotW / 2, y: plotH + 44, 'text-anchor': 'middle' }, plotG)
+    .textContent = spec.xAxisLabel;
+  el('text', {
+    class: 'axis-title', x: -42, y: plotH / 2, 'text-anchor': 'middle',
+    transform: 'rotate(-90 -42 ' + (plotH / 2) + ')'
+  }, plotG).textContent = spec.yAxisLabel;
+
+  scrollWrap(container, svg, w, h, spec);
+  axisNotes(container, scY, ys);
+  if (!shared) axisNotes(container, scX, xs);
+  correlationNotes(container, spec, pts, shared);
+  if (spec.showLegend !== false) {
+    seriesLegend(container, spec.series, spec.seriesDims, style, 'correlation',
+      { colourFor: legendColourFor(spec) });
+    metricLegend(container, spec);
+  }
+}
+
+function round2(n) { return Math.round(n * 100) / 100; }
+function round3(n) { return Math.round(n * 1000) / 1000; }
+
+// How much of the spread a straight line explains. Null rather than 0/0 where
+// there is nothing to correlate -- one point, or an axis with no spread at all.
+function pearsonR(a, b) {
+  const n = a.length;
+  if (n < 2) return null;
+  let ma = 0, mb = 0;
+  for (let i = 0; i < n; i++) { ma += a[i]; mb += b[i]; }
+  ma /= n; mb /= n;
+  let sab = 0, saa = 0, sbb = 0;
+  for (let i = 0; i < n; i++) {
+    const da = a[i] - ma, db = b[i] - mb;
+    sab += da * db; saa += da * da; sbb += db * db;
+  }
+  const den = Math.sqrt(saa * sbb);
+  return den > 0 ? sab / den : null;
+}
+
+// How closely the points sit ON the 45 degree line itself, which is the question
+// the chart asks ("did the second run beat the first?"). Pearson r rewards any
+// straight line -- a run that is always a fixed factor behind still scores r = 1
+// -- so agreement with y = x has to be its own metric. Lin's concordance
+// correlation coefficient is the standard one: it penalises a line that is
+// offset or scaled away from the diagonal as well as scatter around it.
+function concordanceCcc(a, b) {
+  const n = a.length;
+  if (n < 2) return null;
+  let ma = 0, mb = 0;
+  for (let i = 0; i < n; i++) { ma += a[i]; mb += b[i]; }
+  ma /= n; mb /= n;
+  let sab = 0, saa = 0, sbb = 0;
+  for (let i = 0; i < n; i++) {
+    const da = a[i] - ma, db = b[i] - mb;
+    sab += da * db; saa += da * da; sbb += db * db;
+  }
+  const den = saa + sbb + n * (ma - mb) * (ma - mb);
+  return den > 0 ? (2 * sab) / den : null;
+}
+
+// What the dots add up to, in words: which side of the line they fall on, and
+// how tightly they follow one. Both are on the chart rather than left to the
+// eye, because "most of them are above it" is the answer people come for and
+// counting dots by hand is exactly what a chart is meant to save.
+function correlationNotes(container, spec, pts, shared) {
+  if (shared) {
+    let above = 0, below = 0, on = 0;
+    pts.forEach(p => {
+      const eps = 1e-9 * Math.max(Math.abs(p.x), Math.abs(p.y), 1);
+      if (p.y - p.x > eps) above++;
+      else if (p.x - p.y > eps) below++;
+      else on++;
+    });
+    html('div', 'chart-note', container).textContent =
+      pts.length + ' point' + (pts.length === 1 ? '' : 's') + ' — ' + above + ' above the line ('
+      + spec.yAxisLabel + ' the larger), ' + below + ' below, ' + on + ' on it.';
+  } else {
+    html('div', 'chart-note', container).textContent =
+      'The axes are different quantities (' + axisLabelOf(spec.xKind) + ' against '
+      + axisLabelOf(spec.yKind) + '), so each has its own scale and there is no 45° line — '
+      + 'a dot being above one would mean nothing.';
+  }
+  const r = pearsonR(pts.map(p => p.x), pts.map(p => p.y));
+  html('div', 'chart-note', container).textContent = r === null
+    ? 'Pearson r needs two points and some spread on each axis, so it is not shown here.'
+    : 'Pearson r = ' + round3(r) + ', R² = ' + round3(r * r)
+      + ' — how much of the spread a straight line explains, which is not the same as how '
+      + 'closely the points sit on y = x.';
+  // Only when both axes are the same quantity is there a line of equality to
+  // agree with, so the concordance metric is reported there and not beside a
+  // rate plotted against a count. It is the metric for correlation in the sense
+  // the chart means it: agreement with the diagonal, not with any straight line.
+  if (shared) {
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    const ccc = concordanceCcc(xs, ys);
+    html('div', 'chart-note', container).textContent = ccc === null
+      ? 'Lin\'s concordance (ρc) needs two points and some spread on each axis, so it is not shown here.'
+      : 'Concordance with y = x: Lin\'s ρc = ' + round3(ccc)
+        + ' — agreement with the line of equality itself, so a fixed offset or factor '
+        + 'between the axes pulls it down where r would not.';
+  }
+}
+
 // A matrix encodes its value in the cell colour, so it needs a key for that scale
 // just as a bar chart needs one for its series colours.
 function matrixScaleLegend(container, kind, maxVal, maxAbs) {

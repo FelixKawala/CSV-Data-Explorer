@@ -165,6 +165,131 @@ function patternHelp(kind) {
   if (kind === 'regex') {
     return 'A regular expression with named groups: ^(?<device>\\d+)c(?<threads>\\d+)(?<variant>.*)$';
   }
+  if (kind === 'parts') {
+    return 'Every separator cuts the label into parts, and each part becomes a dimension: '
+      + 'a run named base_prefetch_s2000 has prefetch on and a sleep of 2000.';
+  }
   return '{name} a word · {name:d} digits · {name:*} anything · other text matches itself. '
     + 'Name a field {measure} to have its text pick the measure instead of a dimension.';
+}
+
+// ---- labels that are a list of parts ---------------------------------------
+// A pattern reads a label by POSITION: first this, then that. Some labels are
+// not written that way at all -- they are a base name with a set of flags stuck
+// on it, in whatever order and whatever number the run happened to have:
+//
+//   posterization-inverse-sa-pinning-compute-atomic_manual_prefetch_s2000/cu_mode_no_barriers
+//
+// There is no positional pattern for that, because `manual` is absent from half
+// the labels and `s2000` is a value where `prefetch` is a yes/no. What there IS
+// is a set of parts, and the questions worth asking of it -- does prefetch help,
+// does it still help without manual -- are questions about one part at a time.
+// So this reads the label as a SET and proposes one dimension per part.
+
+const PART_SEPS_DEFAULT = '_/';
+function partSeparators(seps) {
+  const s = String(seps === undefined || seps === null ? PART_SEPS_DEFAULT : seps);
+  return s ? s.split('') : [];
+}
+function splitParts(value, seps) {
+  const chars = partSeparators(seps);
+  if (!chars.length) return [String(value)];
+  const re = new RegExp('[' + chars.map(c => c.replace(/[.*+?^${}()|[\]\\\-]/g, '\\$&')).join('') + ']+');
+  return String(value === undefined || value === null ? '' : value)
+    .split(re).filter(p => p !== '');
+}
+
+// Does this label carry this part? A part may itself be compound -- `cu_mode` is
+// one thing whatever the separators say -- so it is carried when every piece of
+// it is present. Membership, not substring: `…-compute` is not `…-compute-atomic`.
+function labelHasPart(label, part, seps) {
+  const have = {};
+  splitParts(label, seps).forEach(p => { have[p] = true; });
+  const want = splitParts(part, seps);
+  return want.length > 0 && want.every(p => have[p]);
+}
+
+// What the parts of a column's values look like, and the dimensions they suggest.
+//
+//   { seps, total, parts: [{ name, count, everywhere }], groups: [{ parts: [name] }] }
+//
+// Two rules do the proposing, and both are stated on screen rather than applied
+// out of sight:
+//
+//   * parts that are never seen apart are ONE part. `cu` and `mode` are always
+//     together, so they are `cu_mode` -- which is what they were before the
+//     separator cut them in half.
+//   * parts that are never seen TOGETHER are one dimension, because that is what
+//     mutually exclusive means: `s2000` and `s5000` are two values of a sleep,
+//     not two independent flags. Everything else is a flag of its own.
+function analyseParts(values, seps) {
+  const list = (values || []).map(v => String(v === undefined || v === null ? '' : v));
+  const total = list.length;
+  const rowsOf = {};
+  const order = [];
+  list.forEach((v, i) => {
+    splitParts(v, seps).forEach(p => {
+      if (!rowsOf[p]) { rowsOf[p] = {}; order.push(p); }
+      rowsOf[p][i] = true;
+    });
+  });
+  // merge the parts that always travel together, keeping the order they are
+  // written in so the compound reads as it did in the label
+  const bySig = {};
+  const merged = [];
+  order.forEach(p => {
+    const sig = Object.keys(rowsOf[p]).sort((a, b) => a - b).join(',');
+    if (bySig[sig] === undefined) {
+      bySig[sig] = merged.length;
+      merged.push({ pieces: [p], rows: rowsOf[p], sig: sig });
+    } else {
+      merged[bySig[sig]].pieces.push(p);
+    }
+  });
+  const parts = merged.map(m => {
+    const count = Object.keys(m.rows).length;
+    // written in the order the label writes them
+    let name = m.pieces[0];
+    if (m.pieces.length > 1) {
+      const first = list[Number(Object.keys(m.rows)[0])];
+      const seq = splitParts(first, seps).filter(p => m.pieces.indexOf(p) !== -1);
+      name = (seq.length ? seq : m.pieces).join('_');
+    }
+    return { name: name, count: count, everywhere: count === total && total > 0, rows: m.rows };
+  });
+  // group the mutually exclusive ones, widest first so the big families form
+  const groups = [];
+  parts.slice().sort((a, b) => b.count - a.count).forEach(p => {
+    if (p.everywhere) return;              // distinguishes nothing; left out below
+    const fits = groups.filter(g => g.parts.every(o => {
+      const keys = Object.keys(p.rows);
+      for (let i = 0; i < keys.length; i++) if (o.rows[keys[i]]) return false;
+      return true;
+    }))[0];
+    if (fits) fits.parts.push(p); else groups.push({ parts: [p] });
+  });
+  return {
+    seps: seps === undefined ? PART_SEPS_DEFAULT : seps,
+    total: total,
+    parts: parts.map(p => ({ name: p.name, count: p.count, everywhere: p.everywhere })),
+    groups: groups.map(g => ({ parts: g.parts.map(p => p.name) })),
+  };
+}
+
+// What one group reads at one label: the part it carries, or that it has none.
+//
+// A flag says its own name rather than "yes": a legend, an axis band and an
+// exported csv column all print the VALUE, and three flags on one chart printing
+// yes, yes, no say nothing about which flag was which. "prefetch" and "no
+// prefetch" are the same two answers, written so they can be read alone -- and
+// they survive the dimension being renamed afterwards, which a label attached to
+// "yes" would not.
+const PART_NONE = 'none';
+function partAbsent(part) { return 'no ' + part; }
+function partValueAt(group, label, seps) {
+  const single = group.parts.length === 1;
+  for (let i = 0; i < group.parts.length; i++) {
+    if (labelHasPart(label, group.parts[i], seps)) return group.parts[i];
+  }
+  return single ? partAbsent(group.parts[0]) : PART_NONE;
 }

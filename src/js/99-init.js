@@ -6,10 +6,25 @@
 // suites drive it, and what makes a self-contained export behave like a picture
 // rather than an app. Only when there is no embedded data do we wait on storage.
 
+// Show a dataset on the builder.
+//
+// A page with nothing pinned behaves exactly as it always has: the plots are
+// rebuilt and the autosave decides what they are. A page that has plots reading
+// datasets of their own does not -- those were pinned deliberately, and
+// throwing them away because a different dataset was opened would make "Open"
+// the one control that can silently delete work. They are kept as they are, and
+// only the plots that follow the page follow it.
 function startWithDataset(ds) {
+  const pinned = plots.some(p => p.datasetId);
+  const onScreen = pinned ? serializePlots() : null;
   useDataset(ds);
-  resetPlots();
-  loadAutosave();          // falls back to the default plot when nothing is stored
+  if (pinned) {
+    applyConfig(onScreen);   // the same repair a saved view gets, per plot
+    releaseUnusedDatasets();
+  } else {
+    resetPlots();
+    loadAutosave();          // falls back to the default plot when nothing is stored
+  }
   renderDataPanel();
   renderBuilder();
 }
@@ -34,10 +49,24 @@ function bootAsync() {
     })
     .then(full => {
       if (!full) return;
-      startWithDataset(datasetFromRecord(full));
+      startWithDataset(registerDataset(datasetFromRecord(full)));
       setActiveDatasetId(full.id);
+      // The autosave may hold plots pinned to other datasets. Those are records
+      // in the store, so they arrive after the first paint: the page comes up
+      // as it always did and the pinned plots resolve a moment later, rather
+      // than everything waiting on however many datasets were open last time.
+      const missing = datasetIdsIn(plots).filter(id => !loadedDataset(id));
       renderDataPanel();
       showMode('builder');
+      if (missing.length) {
+        return ensureDatasetsLoaded(missing).then(() => {
+          plots.forEach(p => {
+            if (p.datasetId && loadedDataset(p.datasetId)) bindPlotToDataset(p, p.datasetId);
+          });
+          renderBuilder();
+        });
+      }
+      return null;
     })
     .catch(e => setDataStatus('Could not restore the last dataset: ' + e.message));
 }

@@ -101,6 +101,7 @@ const SEP = ' \u00b7 '; // joins the parts of a composite (multi-dimension) axis
 
 function useDataset(ds) {
   DS = ds;
+  if (ds && ds.__id) LOADED.set(ds.__id, ds);
   METRICS = ds ? ds.measures : [];
   METRIC_BY_KEY = ds ? ds.measureByKey : {};
   // The measure selector is a dimension everywhere in the UI; it just picks a
@@ -122,6 +123,128 @@ function useDataset(ds) {
   // between the grouping zones.
   GROUPABLE_KEYS = DIM_KEYS.filter(k => k !== MEASURE_DIM);
   return DS;
+}
+
+// ---- reading a particular dataset ------------------------------------------
+// Everything above is the schema of ONE dataset, and every consumer resolves it
+// by name at call time. That is what makes a page of plots all read the same
+// data -- and what stopped two plots reading two different datasets.
+//
+// Rather than thread a dataset through the render recursion (plot plan, layout,
+// leaves: a few hundred forwarding parameters, where one dropped forward draws
+// the wrong numbers and no test can see it), the binding is scoped. `useDataset`
+// already swaps all seven at once; this is that with a restore, which is safe
+// here for one reason worth stating: rendering is synchronous from end to end.
+// Nothing between entering and leaving awaits anything.
+//
+// The fast path matters. A facet-heavy chart re-enters this hundreds of times,
+// and re-entering the dataset already in force must cost a pointer compare
+// rather than rebuilding the pseudo-dimension.
+function withDataset(ds, fn) {
+  if (!ds || ds === DS) return fn();
+  const prev = DS;
+  useDataset(ds);
+  try {
+    return fn();
+  } finally {
+    useDataset(prev);          // null is a valid restore: every read above guards on `ds`
+  }
+}
+
+// ---- the datasets currently in memory ---------------------------------------
+// Several, now, rather than one: a plot may name the dataset it reads, and two
+// plots may name different ones. Keyed by the stored record's id, which is what
+// a plot names and what survives a reload; `datasetFromRecord` stamps it on.
+const LOADED = new Map();
+
+function registerDataset(ds) {
+  if (ds && ds.__id) LOADED.set(ds.__id, ds);
+  return ds;
+}
+function loadedDataset(id) { return (id && LOADED.get(id)) || null; }
+// Deleted from the store: the copy in memory is not a dataset any more, it is a
+// dataset that cannot be rebuilt. A plot pinned to it should say so rather than
+// go on drawing from something nothing can reproduce.
+function forgetDataset(id) { LOADED.delete(id); }
+
+// Rebuild whichever of these is not in memory yet, from the store. Loading is
+// asynchronous and rendering is not, so this is the pre-pass: everything a
+// config names is resolved BEFORE a plot is drawn, never during.
+function ensureDatasetsLoaded(ids) {
+  const want = (ids || []).filter(id => id && !LOADED.has(id));
+  if (!want.length) return Promise.resolve([]);
+  return Promise.all(want.map(id => Promise.resolve(STORE.get(id))
+    .then(rec => (rec ? registerDataset(datasetFromRecord(rec)) : null))
+    .catch(() => null)));
+}
+
+// A dataset nothing points at any more is a second copy of every column it has.
+// The live one is always kept, whether or not a plot names it.
+function releaseUnusedDatasets() {
+  const keep = {};
+  if (DS && DS.__id) keep[DS.__id] = true;
+  plots.forEach(p => { if (p.datasetId) keep[p.datasetId] = true; });
+  Array.from(LOADED.keys()).forEach(id => { if (!keep[id]) LOADED.delete(id); });
+}
+
+// Which dataset a plot reads: the one it names, or the page's.
+//
+// No id means "follow the page", and that is the default rather than a
+// migration -- every plot made before this, every stored view and every
+// autosave has none, and goes on reading whatever is open exactly as it did.
+// A plot gets an id only when someone gives it one deliberately.
+// A plot may name a dataset that is not here: deleted, or not loaded yet. The
+// fallback is the page's, and it is deliberate -- the plot still draws, its
+// card says whose data it is drawing, and the pin is kept so it can go back.
+// This is the ONE place that decides it, so that what is drawn, what the chips
+// offer and what the values are read from cannot disagree.
+function datasetOf(plot) {
+  if (plot && plot.datasetId) return loadedDataset(plot.datasetId) || DS;
+  return DS;
+}
+function plotDatasetMissing(plot) {
+  return !!(plot && plot.datasetId && !loadedDataset(plot.datasetId));
+}
+// The plots on the page that read a given dataset -- the ones pinned to it, and
+// the ones following the page when it is the page's.
+function plotsReading(ds) {
+  return plots.filter(p => datasetOf(p) === ds);
+}
+function plotDatasetName(plot) {
+  if (plotDatasetMissing(plot)) {
+    return plot.datasetName || 'a dataset that is no longer stored';
+  }
+  const ds = datasetOf(plot);
+  return ds ? ds.name : '';
+}
+function withPlotSchema(plot, fn) { return withDataset(datasetOf(plot), fn); }
+
+// A handler built during a render but fired long after it, when the schema in
+// force is whatever the page last looked at. Most handlers do not need this --
+// they change the plot and re-render, and the re-render establishes the context
+// itself -- but the ones that read a dimension or a measure BEFORE re-rendering
+// would read it from the wrong dataset.
+function bindDataset(fn) {
+  const ds = DS;
+  return function () {
+    const args = arguments;
+    return withDataset(ds, () => fn.apply(this, args));
+  };
+}
+
+// Development-only: proves the context discipline holds rather than assuming it.
+// Off unless a page sets __STRICT_SCHEMA before the scripts run.
+//
+// A plot whose dataset is not in memory is not a failure of the discipline --
+// it is the documented fallback, and it reads the page's data on purpose -- so
+// only a plot that HAS its dataset is held to this.
+function assertPlotSchema(plot, where) {
+  if (typeof __STRICT_SCHEMA === 'undefined' || !__STRICT_SCHEMA) return;
+  if (plotDatasetMissing(plot)) return;
+  if (DS !== datasetOf(plot)) {
+    throw new Error('schema out of context in ' + where + ': the page is showing '
+      + (DS && DS.name) + ' while this plot reads ' + ((datasetOf(plot) || {}).name));
+  }
 }
 
 function hasDataset() { return !!DS && DS.dims.length > 0; }
@@ -153,7 +276,10 @@ function addCustomMeasure(measure) {
   DS.measures.push(measure);
   DS.measureByKey[measure.key] = measure;
   useDataset(DS);
-  plots.forEach(p => {
+  // Only the plots that read THIS dataset. A measure belongs to the dataset it
+  // was defined on, and giving a plot of some other data an empty list of it
+  // would leave that plot asking for nothing at all.
+  plotsReading(DS).forEach(p => {
     if (!p.included[MEASURE_DIM]) p.included[MEASURE_DIM] = [];
   });
   persistCustomMeasures();
@@ -169,9 +295,14 @@ function removeCustomMeasure(key) {
   if (dependents.length) return dependents.map(d => d.label);
   DS.measures = DS.measures.filter(o => o.key !== key);
   delete DS.measureByKey[key];
-  plots.forEach(p => {
+  plotsReading(DS).forEach(p => {
     if (p.included[MEASURE_DIM]) {
       p.included[MEASURE_DIM] = p.included[MEASURE_DIM].filter(v => v !== key);
+    }
+    // A correlation axis pinned to it would read nothing at every tuple, with
+    // nothing on the chart to explain the emptiness.
+    if (Array.isArray(p.pins)) {
+      p.pins = p.pins.filter(r => !(r.over === MEASURE_DIM && (r.x === key || r.y === key)));
     }
   });
   useDataset(DS);

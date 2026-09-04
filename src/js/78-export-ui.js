@@ -144,7 +144,12 @@ function addTikzButton(host, getRoot, label, name, cls) {
   btn.className = cls || 'btn small';
   btn.textContent = label;
   btn.title = 'Export this as TikZ source (.tex)';
-  btn.addEventListener('click', e => {
+  // Every one of these buttons is built during a render -- there are six call
+  // sites, all inside one -- and clicked long afterwards. What it exports is
+  // decided then: the dimension labels for the .csv header and the imported
+  // files below it both come from the live schema. Binding at creation is what
+  // makes a button on a chart export that chart's data rather than the page's.
+  btn.addEventListener('click', bindDataset(e => {
     e.preventDefault(); e.stopPropagation();
     const root = getRoot();
     const tex = buildTikzDocument(root, window, name);
@@ -172,7 +177,7 @@ function addTikzButton(host, getRoot, label, name, cls) {
         + (src.length ? '; the imported files are on the row below, unchanged' : '')
       : null);
     setStatus('Export ready — ' + base + '.tex', false);
-  });
+  }));
   host.appendChild(btn);
   addImageButtons(host, getRoot, name, cls);
   return btn;
